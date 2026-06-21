@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, persistSettings } from "./store.svelte";
+  import { app, persistSettings, syncSteamLibrary } from "./store.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -7,14 +7,37 @@
   let steamApiKey = $state(app.settings.steamApiKey ?? "");
   let steamId = $state(app.settings.steamId ?? "");
   let saving = $state(false);
+  let syncing = $state(false);
+  let syncMsg = $state("");
+  let syncErr = $state("");
 
-  async function save() {
-    saving = true;
+  // Persist the current field values into settings (used by both Save and Sync).
+  async function commitFields() {
     app.settings.steamApiKey = steamApiKey.trim() || undefined;
     app.settings.steamId = steamId.trim() || undefined;
     await persistSettings();
+  }
+
+  async function save() {
+    saving = true;
+    await commitFields();
     saving = false;
     onclose();
+  }
+
+  async function syncNow() {
+    syncing = true;
+    syncMsg = "";
+    syncErr = "";
+    try {
+      await commitFields();
+      const { added, updated } = await syncSteamLibrary();
+      syncMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+    } catch (e) {
+      syncErr = String(e);
+    } finally {
+      syncing = false;
+    }
   }
 </script>
 
@@ -44,6 +67,11 @@
         SteamID (17 digits)
         <input bind:value={steamId} placeholder="76561198000000000" />
       </label>
+      <button class="sync" onclick={syncNow} disabled={syncing || !steamApiKey || !steamId}>
+        {syncing ? "Syncing…" : "Sync Steam library now"}
+      </button>
+      {#if syncMsg}<p class="ok">{syncMsg}</p>{/if}
+      {#if syncErr}<p class="err">{syncErr}</p>{/if}
     </section>
 
     <div class="actions">
@@ -128,5 +156,19 @@
   }
   button:disabled {
     opacity: 0.5;
+  }
+  button.sync {
+    width: 100%;
+    margin-top: 4px;
+  }
+  .ok {
+    color: #6ee7a0;
+    font-size: 12px;
+    margin: 8px 0 0;
+  }
+  .err {
+    color: #ffb4b4;
+    font-size: 12px;
+    margin: 8px 0 0;
   }
 </style>

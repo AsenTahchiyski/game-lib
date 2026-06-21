@@ -2,6 +2,7 @@
 // source of truth; Rust only does file IO and (later) store syncs.
 import { emptyLibrary, type Game, type Library, type Settings, type Status } from "./types";
 import * as api from "./api";
+import { mergeSteamGames, type MergeResult } from "./sync";
 
 export const app = $state({
   library: emptyLibrary() as Library,
@@ -75,6 +76,25 @@ export function newLibrary() {
   app.currentPath = null;
   app.loadedMtime = null;
   app.dirty = true;
+}
+
+/** Pull the Steam library and merge it in. Returns counts of added/updated. */
+export async function syncSteamLibrary(): Promise<MergeResult> {
+  const { steamApiKey, steamId } = app.settings;
+  if (!steamApiKey || !steamId) {
+    throw new Error("Set your Steam API key and SteamID in Settings first.");
+  }
+  app.busy = true;
+  app.error = null;
+  try {
+    const games = await api.syncSteam(steamApiKey, steamId);
+    const result = mergeSteamGames(app.library, games);
+    app.library.updatedAt = new Date().toISOString();
+    app.dirty = true;
+    return result;
+  } finally {
+    app.busy = false;
+  }
 }
 
 export type SaveResult = "saved" | "cancelled" | "conflict";

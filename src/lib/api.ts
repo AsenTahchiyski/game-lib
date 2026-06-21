@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Library, Settings } from "./types";
+import type { SteamGame } from "./sync";
 
 const JSON_FILTER = [{ name: "Game Library", extensions: ["json"] }];
 
@@ -28,3 +29,6 @@ export const loadSettings = () => invoke<Settings>("load_settings");
 
 export const saveSettings = (settings: Settings) =>
   invoke<void>("save_settings", { settings });
+
+export const syncSteam = (apiKey: string, steamId: string) =>
+  invoke<SteamGame[]>("sync_steam", { apiKey, steamId });

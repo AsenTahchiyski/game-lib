@@ -1,4 +1,5 @@
 mod commands;
+mod steam;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,6 +12,7 @@ pub fn run() {
             commands::file_mtime,
             commands::load_settings,
             commands::save_settings,
+            steam::sync_steam,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
