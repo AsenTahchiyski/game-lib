@@ -2,7 +2,7 @@
 // source of truth; Rust only does file IO and (later) store syncs.
 import { emptyLibrary, type Game, type Library, type Settings, type Status } from "./types";
 import * as api from "./api";
-import { mergeSteamGames, mergeGogGames, type MergeResult } from "./sync";
+import { mergeSteamGames, mergeGogGames, mergeEpicGames, type MergeResult } from "./sync";
 
 export const app = $state({
   library: emptyLibrary() as Library,
@@ -123,6 +123,40 @@ export async function syncGogLibrary(): Promise<MergeResult> {
     app.settings.gogRefreshToken = refreshToken; // GOG may rotate it
     await persistSettings();
     const result = mergeGogGames(app.library, games);
+    app.library.updatedAt = new Date().toISOString();
+    app.dirty = true;
+    return result;
+  } finally {
+    app.busy = false;
+  }
+}
+
+/** Exchange a pasted Epic auth code for a refresh token and store it. */
+export async function epicConnect(code: string): Promise<void> {
+  app.busy = true;
+  app.error = null;
+  try {
+    const refreshToken = await api.epicExchangeCode(code);
+    app.settings.epicRefreshToken = refreshToken;
+    await persistSettings();
+  } finally {
+    app.busy = false;
+  }
+}
+
+/** Pull the Epic library and merge it in. Returns counts of added/updated. */
+export async function syncEpicLibrary(): Promise<MergeResult> {
+  const token = app.settings.epicRefreshToken;
+  if (!token) {
+    throw new Error("Connect your Epic account first.");
+  }
+  app.busy = true;
+  app.error = null;
+  try {
+    const { refreshToken, games } = await api.epicSync(token);
+    app.settings.epicRefreshToken = refreshToken;
+    await persistSettings();
+    const result = mergeEpicGames(app.library, games);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;

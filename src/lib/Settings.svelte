@@ -1,7 +1,15 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { app, persistSettings, syncSteamLibrary, gogConnect, syncGogLibrary } from "./store.svelte";
-  import { gogLoginUrl } from "./api";
+  import {
+    app,
+    persistSettings,
+    syncSteamLibrary,
+    gogConnect,
+    syncGogLibrary,
+    epicConnect,
+    syncEpicLibrary,
+  } from "./store.svelte";
+  import { gogLoginUrl, epicLoginUrl } from "./api";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -19,6 +27,12 @@
   let gogMsg = $state("");
   let gogErr = $state("");
   const gogConnected = $derived(!!app.settings.gogRefreshToken);
+
+  let epicCode = $state("");
+  let epicBusy = $state(false);
+  let epicMsg = $state("");
+  let epicErr = $state("");
+  const epicConnected = $derived(!!app.settings.epicRefreshToken);
 
   async function commitFields() {
     app.settings.steamApiKey = steamApiKey.trim() || undefined;
@@ -80,6 +94,39 @@
       gogBusy = false;
     }
   }
+
+  async function openEpicLogin() {
+    await openUrl(await epicLoginUrl());
+  }
+
+  async function connectEpic() {
+    epicBusy = true;
+    epicMsg = "";
+    epicErr = "";
+    try {
+      await epicConnect(epicCode);
+      epicCode = "";
+      epicMsg = "Epic connected. You can sync now.";
+    } catch (e) {
+      epicErr = String(e);
+    } finally {
+      epicBusy = false;
+    }
+  }
+
+  async function syncEpicNow() {
+    epicBusy = true;
+    epicMsg = "";
+    epicErr = "";
+    try {
+      const { added, updated } = await syncEpicLibrary();
+      epicMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+    } catch (e) {
+      epicErr = String(e);
+    } finally {
+      epicBusy = false;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
@@ -132,6 +179,25 @@
       </button>
       {#if gogMsg}<p class="ok">{gogMsg}</p>{/if}
       {#if gogErr}<p class="err">{gogErr}</p>{/if}
+    </section>
+
+    <section>
+      <h3>Epic {#if epicConnected}<span class="badge">connected</span>{/if}</h3>
+      <p class="note">
+        Log in once in your browser. Epic then shows a page of JSON containing an
+        <span class="mono">authorizationCode</span> — copy that value and paste it below. Only the
+        resulting token is stored, on this device.
+      </p>
+      <button class="full" onclick={openEpicLogin}>Open Epic login in browser</button>
+      <div class="row">
+        <input bind:value={epicCode} placeholder="Paste Epic authorizationCode" />
+        <button onclick={connectEpic} disabled={epicBusy || !epicCode}>Connect</button>
+      </div>
+      <button class="full" onclick={syncEpicNow} disabled={epicBusy || !epicConnected}>
+        {epicBusy ? "Working…" : "Sync Epic library now"}
+      </button>
+      {#if epicMsg}<p class="ok">{epicMsg}</p>{/if}
+      {#if epicErr}<p class="err">{epicErr}</p>{/if}
     </section>
 
     <div class="actions">

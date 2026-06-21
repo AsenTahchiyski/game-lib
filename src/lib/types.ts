@@ -68,6 +68,7 @@ export interface Settings {
   steamApiKey?: string;
   steamId?: string;
   gogRefreshToken?: string;
+  epicRefreshToken?: string;
   lastLibraryPath?: string;
 }
 

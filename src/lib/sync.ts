@@ -18,6 +18,16 @@ export interface GogSyncResult {
   games: GogGame[];
 }
 
+export interface EpicGame {
+  id: string;
+  title: string;
+}
+
+export interface EpicSyncResult {
+  refreshToken: string;
+  games: EpicGame[];
+}
+
 export interface MergeResult {
   added: number;
   updated: number;
@@ -84,6 +94,40 @@ export function mergeGogGames(library: Library, games: GogGame[]): MergeResult {
         statusChangedAt: now,
         statusHistory: [{ status: "backlog", at: now }],
         playtimeMinutes: 0, // GOG's owned-games API doesn't expose playtime
+        addedAt: now,
+        lastSyncedAt: now,
+      });
+      added++;
+    }
+  }
+
+  return { added, updated };
+}
+
+export function mergeEpicGames(library: Library, games: EpicGame[]): MergeResult {
+  const now = new Date().toISOString();
+  let added = 0;
+  let updated = 0;
+
+  const byId = new Map<string, Game>();
+  for (const g of library.games) {
+    if (g.sources.epic) byId.set(g.sources.epic.id, g);
+  }
+
+  for (const eg of games) {
+    const existing = byId.get(eg.id);
+    if (existing) {
+      existing.lastSyncedAt = now;
+      updated++;
+    } else {
+      library.games.push({
+        id: crypto.randomUUID(),
+        title: eg.title || `Epic item ${eg.id}`,
+        sources: { epic: { id: eg.id } },
+        status: "backlog",
+        statusChangedAt: now,
+        statusHistory: [{ status: "backlog", at: now }],
+        playtimeMinutes: 0, // Epic's library API doesn't expose playtime
         addedAt: now,
         lastSyncedAt: now,
       });

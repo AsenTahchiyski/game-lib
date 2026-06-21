@@ -1,4 +1,5 @@
 mod commands;
+mod epic;
 mod gog;
 mod steam;
 
@@ -17,6 +18,9 @@ pub fn run() {
             gog::gog_login_url,
             gog::gog_exchange_code,
             gog::gog_sync,
+            epic::epic_login_url,
+            epic::epic_exchange_code,
+            epic::epic_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

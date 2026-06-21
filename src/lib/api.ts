@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Library, Settings } from "./types";
-import type { SteamGame, GogSyncResult } from "./sync";
+import type { SteamGame, GogSyncResult, EpicSyncResult } from "./sync";
 
 const JSON_FILTER = [{ name: "Game Library", extensions: ["json"] }];
 
@@ -40,3 +40,11 @@ export const gogExchangeCode = (code: string) =>
 
 export const gogSync = (refreshToken: string) =>
   invoke<GogSyncResult>("gog_sync", { refreshToken });
+
+export const epicLoginUrl = () => invoke<string>("epic_login_url");
+
+export const epicExchangeCode = (code: string) =>
+  invoke<string>("epic_exchange_code", { code });
+
+export const epicSync = (refreshToken: string) =>
+  invoke<EpicSyncResult>("epic_sync", { refreshToken });
