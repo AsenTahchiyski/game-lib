@@ -1,17 +1,25 @@
 <script lang="ts">
-  import { app, persistSettings, syncSteamLibrary } from "./store.svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { app, persistSettings, syncSteamLibrary, gogConnect, syncGogLibrary } from "./store.svelte";
+  import { gogLoginUrl } from "./api";
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // Local editable copy so we only commit on Save.
+  // Local editable copies so we only commit on Save.
   let steamApiKey = $state(app.settings.steamApiKey ?? "");
   let steamId = $state(app.settings.steamId ?? "");
   let saving = $state(false);
-  let syncing = $state(false);
-  let syncMsg = $state("");
-  let syncErr = $state("");
 
-  // Persist the current field values into settings (used by both Save and Sync).
+  let steamSyncing = $state(false);
+  let steamMsg = $state("");
+  let steamErr = $state("");
+
+  let gogCode = $state("");
+  let gogBusy = $state(false);
+  let gogMsg = $state("");
+  let gogErr = $state("");
+  const gogConnected = $derived(!!app.settings.gogRefreshToken);
+
   async function commitFields() {
     app.settings.steamApiKey = steamApiKey.trim() || undefined;
     app.settings.steamId = steamId.trim() || undefined;
@@ -25,18 +33,51 @@
     onclose();
   }
 
-  async function syncNow() {
-    syncing = true;
-    syncMsg = "";
-    syncErr = "";
+  async function syncSteamNow() {
+    steamSyncing = true;
+    steamMsg = "";
+    steamErr = "";
     try {
       await commitFields();
       const { added, updated } = await syncSteamLibrary();
-      syncMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+      steamMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
     } catch (e) {
-      syncErr = String(e);
+      steamErr = String(e);
     } finally {
-      syncing = false;
+      steamSyncing = false;
+    }
+  }
+
+  async function openGogLogin() {
+    await openUrl(await gogLoginUrl());
+  }
+
+  async function connectGog() {
+    gogBusy = true;
+    gogMsg = "";
+    gogErr = "";
+    try {
+      await gogConnect(gogCode);
+      gogCode = "";
+      gogMsg = "GOG connected. You can sync now.";
+    } catch (e) {
+      gogErr = String(e);
+    } finally {
+      gogBusy = false;
+    }
+  }
+
+  async function syncGogNow() {
+    gogBusy = true;
+    gogMsg = "";
+    gogErr = "";
+    try {
+      const { added, updated } = await syncGogLibrary();
+      gogMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+    } catch (e) {
+      gogErr = String(e);
+    } finally {
+      gogBusy = false;
     }
   }
 </script>
@@ -67,11 +108,30 @@
         SteamID (17 digits)
         <input bind:value={steamId} placeholder="76561198000000000" />
       </label>
-      <button class="sync" onclick={syncNow} disabled={syncing || !steamApiKey || !steamId}>
-        {syncing ? "Syncing…" : "Sync Steam library now"}
+      <button class="full" onclick={syncSteamNow} disabled={steamSyncing || !steamApiKey || !steamId}>
+        {steamSyncing ? "Syncing…" : "Sync Steam library now"}
       </button>
-      {#if syncMsg}<p class="ok">{syncMsg}</p>{/if}
-      {#if syncErr}<p class="err">{syncErr}</p>{/if}
+      {#if steamMsg}<p class="ok">{steamMsg}</p>{/if}
+      {#if steamErr}<p class="err">{steamErr}</p>{/if}
+    </section>
+
+    <section>
+      <h3>GOG {#if gogConnected}<span class="badge">connected</span>{/if}</h3>
+      <p class="note">
+        Log in once in your browser, then copy the <span class="mono">code</span> value from the
+        address bar after login (the page URL ends with <span class="mono">?…&code=XXXX</span>) and
+        paste it below. Only the resulting token is stored, on this device.
+      </p>
+      <button class="full" onclick={openGogLogin}>Open GOG login in browser</button>
+      <div class="row">
+        <input bind:value={gogCode} placeholder="Paste GOG code here" />
+        <button onclick={connectGog} disabled={gogBusy || !gogCode}>Connect</button>
+      </div>
+      <button class="full" onclick={syncGogNow} disabled={gogBusy || !gogConnected}>
+        {gogBusy ? "Working…" : "Sync GOG library now"}
+      </button>
+      {#if gogMsg}<p class="ok">{gogMsg}</p>{/if}
+      {#if gogErr}<p class="err">{gogErr}</p>{/if}
     </section>
 
     <div class="actions">
@@ -97,14 +157,25 @@
     padding: 22px;
     width: 460px;
     max-width: 90vw;
+    max-height: 88vh;
+    overflow-y: auto;
   }
   h2 {
     margin: 0 0 16px;
     font-size: 18px;
   }
   h3 {
-    margin: 0 0 8px;
+    margin: 18px 0 8px;
     font-size: 14px;
+  }
+  .badge {
+    font-size: 11px;
+    color: #6ee7a0;
+    border: 1px solid #2f5d44;
+    border-radius: 10px;
+    padding: 1px 8px;
+    margin-left: 6px;
+    vertical-align: middle;
   }
   .note {
     font-size: 12px;
@@ -134,11 +205,20 @@
     color: #e6e6e6;
     font-size: 13px;
   }
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin: 8px 0;
+  }
+  .row input {
+    margin-top: 0;
+  }
   .actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 16px;
   }
   button {
     background: #2c2f37;
@@ -148,6 +228,7 @@
     padding: 7px 14px;
     font-size: 13px;
     cursor: pointer;
+    white-space: nowrap;
   }
   button.primary {
     background: #5865f2;
@@ -157,7 +238,7 @@
   button:disabled {
     opacity: 0.5;
   }
-  button.sync {
+  button.full {
     width: 100%;
     margin-top: 4px;
   }

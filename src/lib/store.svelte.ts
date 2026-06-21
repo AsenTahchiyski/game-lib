@@ -2,7 +2,7 @@
 // source of truth; Rust only does file IO and (later) store syncs.
 import { emptyLibrary, type Game, type Library, type Settings, type Status } from "./types";
 import * as api from "./api";
-import { mergeSteamGames, type MergeResult } from "./sync";
+import { mergeSteamGames, mergeGogGames, type MergeResult } from "./sync";
 
 export const app = $state({
   library: emptyLibrary() as Library,
@@ -89,6 +89,40 @@ export async function syncSteamLibrary(): Promise<MergeResult> {
   try {
     const games = await api.syncSteam(steamApiKey, steamId);
     const result = mergeSteamGames(app.library, games);
+    app.library.updatedAt = new Date().toISOString();
+    app.dirty = true;
+    return result;
+  } finally {
+    app.busy = false;
+  }
+}
+
+/** Exchange a pasted GOG auth code for a refresh token and store it. */
+export async function gogConnect(code: string): Promise<void> {
+  app.busy = true;
+  app.error = null;
+  try {
+    const refreshToken = await api.gogExchangeCode(code);
+    app.settings.gogRefreshToken = refreshToken;
+    await persistSettings();
+  } finally {
+    app.busy = false;
+  }
+}
+
+/** Pull the GOG library and merge it in. Returns counts of added/updated. */
+export async function syncGogLibrary(): Promise<MergeResult> {
+  const token = app.settings.gogRefreshToken;
+  if (!token) {
+    throw new Error("Connect your GOG account first.");
+  }
+  app.busy = true;
+  app.error = null;
+  try {
+    const { refreshToken, games } = await api.gogSync(token);
+    app.settings.gogRefreshToken = refreshToken; // GOG may rotate it
+    await persistSettings();
+    const result = mergeGogGames(app.library, games);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;

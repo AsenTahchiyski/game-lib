@@ -67,6 +67,7 @@ export interface Library {
 export interface Settings {
   steamApiKey?: string;
   steamId?: string;
+  gogRefreshToken?: string;
   lastLibraryPath?: string;
 }
 
