@@ -1,6 +1,7 @@
 mod commands;
 mod epic;
 mod gog;
+mod ign;
 mod steam;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,6 +22,7 @@ pub fn run() {
             epic::epic_login_url,
             epic::epic_exchange_code,
             epic::epic_sync,
+            ign::ign_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

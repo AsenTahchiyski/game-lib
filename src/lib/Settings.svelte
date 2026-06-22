@@ -8,6 +8,7 @@
     syncGogLibrary,
     epicConnect,
     syncEpicLibrary,
+    syncIgnLibrary,
   } from "./store.svelte";
   import { gogLoginUrl, epicLoginUrl } from "./api";
 
@@ -34,9 +35,15 @@
   let epicErr = $state("");
   const epicConnected = $derived(!!app.settings.epicRefreshToken);
 
+  let ignNickname = $state(app.settings.ignNickname ?? "");
+  let ignBusy = $state(false);
+  let ignMsg = $state("");
+  let ignErr = $state("");
+
   async function commitFields() {
     app.settings.steamApiKey = steamApiKey.trim() || undefined;
     app.settings.steamId = steamId.trim() || undefined;
+    app.settings.ignNickname = ignNickname.trim() || undefined;
     await persistSettings();
   }
 
@@ -127,6 +134,21 @@
       epicBusy = false;
     }
   }
+
+  async function importIgnNow() {
+    ignBusy = true;
+    ignMsg = "";
+    ignErr = "";
+    try {
+      await commitFields();
+      const { added, updated } = await syncIgnLibrary();
+      ignMsg = `Imported: ${added} added, ${updated} updated. Remember to Save.`;
+    } catch (e) {
+      ignErr = String(e);
+    } finally {
+      ignBusy = false;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
@@ -198,6 +220,25 @@
       </button>
       {#if epicMsg}<p class="ok">{epicMsg}</p>{/if}
       {#if epicErr}<p class="err">{epicErr}</p>{/if}
+    </section>
+
+    <section>
+      <h3>IGN Playlist</h3>
+      <p class="note">
+        One-time migration of your curated statuses from IGN's Playlist app. Set your playlist
+        to <span class="mono">Public</span> in IGN, then enter your nickname (the last part of
+        <span class="mono">ign.com/playlist/yourname</span>) or paste the full profile URL. No
+        login needed — nothing is stored except the nickname.
+      </p>
+      <label>
+        IGN nickname or profile URL
+        <input bind:value={ignNickname} placeholder="malkstor" />
+      </label>
+      <button class="full" onclick={importIgnNow} disabled={ignBusy || !ignNickname}>
+        {ignBusy ? "Importing…" : "Import IGN playlist now"}
+      </button>
+      {#if ignMsg}<p class="ok">{ignMsg}</p>{/if}
+      {#if ignErr}<p class="err">{ignErr}</p>{/if}
     </section>
 
     <div class="actions">

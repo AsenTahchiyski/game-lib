@@ -2,7 +2,13 @@
 // source of truth; Rust only does file IO and (later) store syncs.
 import { emptyLibrary, type Game, type Library, type Settings, type Status } from "./types";
 import * as api from "./api";
-import { mergeSteamGames, mergeGogGames, mergeEpicGames, type MergeResult } from "./sync";
+import {
+  mergeSteamGames,
+  mergeGogGames,
+  mergeEpicGames,
+  mergeIgnGames,
+  type MergeResult,
+} from "./sync";
 
 export const app = $state({
   library: emptyLibrary() as Library,
@@ -157,6 +163,29 @@ export async function syncEpicLibrary(): Promise<MergeResult> {
     app.settings.epicRefreshToken = refreshToken;
     await persistSettings();
     const result = mergeEpicGames(app.library, games);
+    app.library.updatedAt = new Date().toISOString();
+    app.dirty = true;
+    return result;
+  } finally {
+    app.busy = false;
+  }
+}
+
+/**
+ * Import a public IGN Playlist by nickname/profile URL and merge it in. Unlike
+ * the store syncs this carries curated statuses, so it seeds/updates status.
+ * Persists the nickname for one-click re-imports.
+ */
+export async function syncIgnLibrary(): Promise<MergeResult> {
+  const nickname = app.settings.ignNickname;
+  if (!nickname) {
+    throw new Error("Enter your IGN nickname in Settings first.");
+  }
+  app.busy = true;
+  app.error = null;
+  try {
+    const games = await api.ignSync(nickname);
+    const result = mergeIgnGames(app.library, games);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;

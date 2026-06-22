@@ -1,6 +1,6 @@
 // Merge logic for store syncs. Rule: never overwrite a user-set status; new
 // items get a sensible default. Mutates the passed library in place.
-import type { Game, Library } from "./types";
+import type { Game, Library, Status } from "./types";
 
 export interface SteamGame {
   appid: number;
@@ -26,6 +26,12 @@ export interface EpicGame {
 export interface EpicSyncResult {
   refreshToken: string;
   games: EpicGame[];
+}
+
+export interface IgnGame {
+  id: string;
+  title: string;
+  status: Status; // already mapped to our vocabulary by the Rust side
 }
 
 export interface MergeResult {
@@ -128,6 +134,49 @@ export function mergeEpicGames(library: Library, games: EpicGame[]): MergeResult
         statusChangedAt: now,
         statusHistory: [{ status: "backlog", at: now }],
         playtimeMinutes: 0, // Epic's library API doesn't expose playtime
+        addedAt: now,
+        lastSyncedAt: now,
+      });
+      added++;
+    }
+  }
+
+  return { added, updated };
+}
+
+// IGN is unlike the other syncs: it carries the user's *curated status*, which
+// is the whole point of migrating from IGN's Playlist app. So new games are
+// created with their IGN status (not a default), and a re-import updates a
+// previously-imported game's status if it changed in IGN.
+export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
+  const now = new Date().toISOString();
+  let added = 0;
+  let updated = 0;
+
+  const byId = new Map<string, Game>();
+  for (const g of library.games) {
+    if (g.sources.ign) byId.set(g.sources.ign.id, g);
+  }
+
+  for (const ig of games) {
+    const existing = byId.get(ig.id);
+    if (existing) {
+      if (existing.status !== ig.status) {
+        existing.status = ig.status;
+        existing.statusChangedAt = now;
+        existing.statusHistory.push({ status: ig.status, at: now });
+      }
+      existing.lastSyncedAt = now;
+      updated++;
+    } else {
+      library.games.push({
+        id: crypto.randomUUID(),
+        title: ig.title || `IGN game ${ig.id}`,
+        sources: { ign: { id: ig.id } },
+        status: ig.status,
+        statusChangedAt: now,
+        statusHistory: [{ status: ig.status, at: now }],
+        playtimeMinutes: 0, // IGN's playlist doesn't expose playtime
         addedAt: now,
         lastSyncedAt: now,
       });
