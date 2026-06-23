@@ -181,6 +181,10 @@ async fn graphql<T: serde::de::DeserializeOwned>(
         .header("Content-Type", "application/json")
         .header("Origin", "https://www.ign.com")
         .header("Referer", "https://www.ign.com/")
+        // Force an uncompressed response: the bundled HTTP client may advertise
+        // gzip/brotli, and a compressed body it doesn't transparently decode
+        // shows up as an opaque "error decoding response body".
+        .header("Accept-Encoding", "identity")
         .json(&serde_json::json!({ "query": query, "variables": variables }))
         .send()
         .await
@@ -190,10 +194,17 @@ async fn graphql<T: serde::de::DeserializeOwned>(
         return Err(format!("IGN API returned HTTP {}.", resp.status()));
     }
 
-    let body: GraphQlResponse<T> = resp
-        .json()
+    // Read as text first, then parse, so a non-JSON body (e.g. a CDN
+    // interstitial) is surfaced instead of a generic decode error.
+    let text = resp
+        .text()
         .await
-        .map_err(|e| format!("Could not parse IGN response: {e}"))?;
+        .map_err(|e| format!("Could not read IGN response: {e}"))?;
+
+    let body: GraphQlResponse<T> = serde_json::from_str(&text).map_err(|e| {
+        let snippet: String = text.chars().take(200).collect();
+        format!("Could not parse IGN response: {e}. Body began: {snippet}")
+    })?;
 
     if let Some(err) = body.errors.into_iter().next() {
         return Err(format!("IGN API error: {}", err.message));
