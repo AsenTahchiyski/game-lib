@@ -1,6 +1,12 @@
-// Merge logic for store syncs. Rule: never overwrite a user-set status; new
-// items get a sensible default. Mutates the passed library in place.
-import type { Game, Library, Status } from "./types";
+// Merge logic for store syncs. Rules:
+//  - Match an incoming game to an existing one first by this store's source id,
+//    then by normalized title (so a game owned on Steam *and* listed in IGN
+//    becomes ONE entry carrying both source ids, not two duplicates).
+//  - Never overwrite a user-set status from an ownership-only sync; new items
+//    default to backlog. IGN is special: it carries the curated status, so it
+//    seeds/updates status.
+// Mutates the passed library in place.
+import type { Game, Library, Status, StoreId } from "./types";
 
 export interface SteamGame {
   appid: number;
@@ -39,129 +45,86 @@ export interface MergeResult {
   updated: number;
 }
 
-export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResult {
-  const now = new Date().toISOString();
-  let added = 0;
-  let updated = 0;
-
-  const byAppid = new Map<number, Game>();
-  for (const g of library.games) {
-    if (g.sources.steam) byAppid.set(g.sources.steam.appid, g);
-  }
-
-  for (const sg of games) {
-    const existing = byAppid.get(sg.appid);
-    if (existing) {
-      // Refresh playtime; leave the user's status untouched.
-      existing.playtimeMinutes = sg.playtimeMinutes;
-      existing.lastSyncedAt = now;
-      updated++;
-    } else {
-      library.games.push({
-        id: crypto.randomUUID(),
-        title: sg.name || `Steam app ${sg.appid}`,
-        sources: { steam: { appid: sg.appid } },
-        status: "backlog",
-        statusChangedAt: now,
-        statusHistory: [{ status: "backlog", at: now }],
-        playtimeMinutes: sg.playtimeMinutes,
-        addedAt: now,
-        lastSyncedAt: now,
-      });
-      added++;
-    }
-  }
-
-  return { added, updated };
+/** One incoming game, normalized across the different store shapes. */
+interface Incoming {
+  id: string; // this store's id, as a string
+  title: string;
+  playtimeMinutes?: number; // only Steam exposes this
+  status?: Status; // only IGN carries a curated status
 }
 
-export function mergeGogGames(library: Library, games: GogGame[]): MergeResult {
-  const now = new Date().toISOString();
-  let added = 0;
-  let updated = 0;
-
-  const byId = new Map<string, Game>();
-  for (const g of library.games) {
-    if (g.sources.gog) byId.set(g.sources.gog.id, g);
-  }
-
-  for (const gg of games) {
-    const existing = byId.get(gg.id);
-    if (existing) {
-      // Keep the user's status; just record that we saw it.
-      existing.lastSyncedAt = now;
-      updated++;
-    } else {
-      library.games.push({
-        id: crypto.randomUUID(),
-        title: gg.title || `GOG product ${gg.id}`,
-        sources: { gog: { id: gg.id } },
-        status: "backlog",
-        statusChangedAt: now,
-        statusHistory: [{ status: "backlog", at: now }],
-        playtimeMinutes: 0, // GOG's owned-games API doesn't expose playtime
-        addedAt: now,
-        lastSyncedAt: now,
-      });
-      added++;
-    }
-  }
-
-  return { added, updated };
+/**
+ * Normalize a title for cross-store matching: lowercase, drop everything but
+ * letters/digits, collapse whitespace. Deliberately conservative — it keeps
+ * "Portal" and "Portal 2" distinct rather than risk false merges.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-export function mergeEpicGames(library: Library, games: EpicGame[]): MergeResult {
-  const now = new Date().toISOString();
-  let added = 0;
-  let updated = 0;
-
-  const byId = new Map<string, Game>();
-  for (const g of library.games) {
-    if (g.sources.epic) byId.set(g.sources.epic.id, g);
+function getSourceId(game: Game, store: StoreId): string | undefined {
+  switch (store) {
+    case "steam":
+      return game.sources.steam ? String(game.sources.steam.appid) : undefined;
+    case "gog":
+      return game.sources.gog?.id;
+    case "epic":
+      return game.sources.epic?.id;
+    case "ign":
+      return game.sources.ign?.id;
   }
-
-  for (const eg of games) {
-    const existing = byId.get(eg.id);
-    if (existing) {
-      existing.lastSyncedAt = now;
-      updated++;
-    } else {
-      library.games.push({
-        id: crypto.randomUUID(),
-        title: eg.title || `Epic item ${eg.id}`,
-        sources: { epic: { id: eg.id } },
-        status: "backlog",
-        statusChangedAt: now,
-        statusHistory: [{ status: "backlog", at: now }],
-        playtimeMinutes: 0, // Epic's library API doesn't expose playtime
-        addedAt: now,
-        lastSyncedAt: now,
-      });
-      added++;
-    }
-  }
-
-  return { added, updated };
 }
 
-// IGN is unlike the other syncs: it carries the user's *curated status*, which
-// is the whole point of migrating from IGN's Playlist app. So new games are
-// created with their IGN status (not a default), and a re-import updates a
-// previously-imported game's status if it changed in IGN.
-export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
+function setSourceId(game: Game, store: StoreId, id: string): void {
+  switch (store) {
+    case "steam":
+      game.sources.steam = { appid: Number(id) };
+      break;
+    case "gog":
+      game.sources.gog = { id };
+      break;
+    case "epic":
+      game.sources.epic = { id };
+      break;
+    case "ign":
+      game.sources.ign = { id };
+      break;
+  }
+}
+
+function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeResult {
   const now = new Date().toISOString();
   let added = 0;
   let updated = 0;
 
-  const byId = new Map<string, Game>();
+  const bySource = new Map<string, Game>();
+  const byTitle = new Map<string, Game>();
   for (const g of library.games) {
-    if (g.sources.ign) byId.set(g.sources.ign.id, g);
+    const sid = getSourceId(g, store);
+    if (sid) bySource.set(sid, g);
+    const norm = normalizeTitle(g.title);
+    if (norm && !byTitle.has(norm)) byTitle.set(norm, g);
   }
 
   for (const ig of games) {
-    const existing = byId.get(ig.id);
+    let existing = bySource.get(ig.id);
+    if (!existing) {
+      // Fall back to a title match against a game from a different source, but
+      // only if that game doesn't already carry this store's id (which would
+      // mean it's a distinct title-clashing entry, not the same game).
+      const norm = normalizeTitle(ig.title);
+      const match = norm ? byTitle.get(norm) : undefined;
+      if (match && !getSourceId(match, store)) existing = match;
+    }
+
     if (existing) {
-      if (existing.status !== ig.status) {
+      setSourceId(existing, store, ig.id);
+      bySource.set(ig.id, existing);
+      if (ig.playtimeMinutes !== undefined) existing.playtimeMinutes = ig.playtimeMinutes;
+      if (ig.status && existing.status !== ig.status) {
         existing.status = ig.status;
         existing.statusChangedAt = now;
         existing.statusHistory.push({ status: ig.status, at: now });
@@ -169,20 +132,62 @@ export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
       existing.lastSyncedAt = now;
       updated++;
     } else {
-      library.games.push({
+      const status: Status = ig.status ?? "backlog";
+      const game: Game = {
         id: crypto.randomUUID(),
-        title: ig.title || `IGN game ${ig.id}`,
-        sources: { ign: { id: ig.id } },
-        status: ig.status,
+        title: ig.title,
+        sources: {},
+        status,
         statusChangedAt: now,
-        statusHistory: [{ status: ig.status, at: now }],
-        playtimeMinutes: 0, // IGN's playlist doesn't expose playtime
+        statusHistory: [{ status, at: now }],
+        playtimeMinutes: ig.playtimeMinutes ?? 0,
         addedAt: now,
         lastSyncedAt: now,
-      });
+      };
+      setSourceId(game, store, ig.id);
+      library.games.push(game);
+      bySource.set(ig.id, game);
+      const norm = normalizeTitle(game.title);
+      if (norm && !byTitle.has(norm)) byTitle.set(norm, game);
       added++;
     }
   }
 
   return { added, updated };
+}
+
+export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResult {
+  return mergeGames(
+    library,
+    "steam",
+    games.map((g) => ({
+      id: String(g.appid),
+      title: g.name || `Steam app ${g.appid}`,
+      playtimeMinutes: g.playtimeMinutes,
+    })),
+  );
+}
+
+export function mergeGogGames(library: Library, games: GogGame[]): MergeResult {
+  return mergeGames(
+    library,
+    "gog",
+    games.map((g) => ({ id: g.id, title: g.title || `GOG product ${g.id}` })),
+  );
+}
+
+export function mergeEpicGames(library: Library, games: EpicGame[]): MergeResult {
+  return mergeGames(
+    library,
+    "epic",
+    games.map((g) => ({ id: g.id, title: g.title || `Epic item ${g.id}` })),
+  );
+}
+
+export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
+  return mergeGames(
+    library,
+    "ign",
+    games.map((g) => ({ id: g.id, title: g.title || `IGN game ${g.id}`, status: g.status })),
+  );
 }
