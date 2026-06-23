@@ -8,6 +8,8 @@ on:
 jobs:
   android:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write # needed to publish the rolling release
     env:
       NDK_VERSION: "26.1.10909125"
     steps:
@@ -57,3 +59,15 @@ jobs:
           name: game-library-android-debug
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: ignore
+
+      # Publish to a rolling prerelease so the APK has a stable, login-free
+      # download URL that works directly from a phone (the GitHub mobile app
+      # can't download workflow artifacts).
+      - name: Publish APK to latest-android release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-android
+          name: Latest Android (debug)
+          prerelease: true
+          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk

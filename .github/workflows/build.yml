@@ -16,6 +16,8 @@ jobs:
           - platform: windows-latest
           - platform: macos-latest
     runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write # needed to publish the rolling release
 
     steps:
       - uses: actions/checkout@v4
@@ -58,3 +60,14 @@ jobs:
           path: |
             src-tauri/target/release/bundle/**
           if-no-files-found: ignore
+
+      # Publish the Linux AppImage to a rolling prerelease so it has a stable,
+      # login-free, one-click download URL. Only the Ubuntu leg publishes.
+      - name: Publish AppImage to latest-desktop release
+        if: matrix.platform == 'ubuntu-22.04' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-desktop
+          name: Latest Desktop (Linux)
+          prerelease: true
+          files: src-tauri/target/release/bundle/appimage/*.AppImage
