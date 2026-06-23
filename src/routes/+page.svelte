@@ -6,18 +6,45 @@
   import { formatPlaytime, formatDate } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
 
+  type SortKey = "title" | "status" | "since" | "playtime";
+  const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
+
   let search = $state("");
   let statusFilter = $state<Status | "all">("all");
+  let viewMode = $state<"list" | "grid">("list");
+  let sortKey = $state<SortKey>("title");
+  let sortAsc = $state(true);
+  let sourceFilter = $state(new Set<string>());
+  let openMenu = $state<string | null>(null);
   let showSettings = $state(false);
 
   onMount(init);
 
-  const filtered = $derived(
-    app.library.games
-      .filter((g) => statusFilter === "all" || g.status === statusFilter)
-      .filter((g) => g.title.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => a.title.localeCompare(b.title)),
-  );
+  function compareBy(a: Game, b: Game, key: SortKey): number {
+    switch (key) {
+      case "title":
+        return a.title.localeCompare(b.title);
+      case "status":
+        return STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status);
+      case "since":
+        return (Date.parse(a.statusChangedAt ?? "") || 0) - (Date.parse(b.statusChangedAt ?? "") || 0);
+      case "playtime":
+        return (a.playtimeMinutes ?? -1) - (b.playtimeMinutes ?? -1);
+    }
+  }
+
+  const filtered = $derived.by(() => {
+    const q = search.toLowerCase();
+    const list = app.library.games.filter(
+      (g) =>
+        (statusFilter === "all" || g.status === statusFilter) &&
+        g.title.toLowerCase().includes(q) &&
+        (sourceFilter.size === 0 ||
+          SOURCE_IDS.some((s) => sourceFilter.has(s) && (g.sources as Record<string, unknown>)[s])),
+    );
+    const dir = sortAsc ? 1 : -1;
+    return list.sort((a, b) => dir * compareBy(a, b, sortKey));
+  });
 
   // Count of games per status, for the filter chips.
   const counts = $derived.by(() => {
@@ -52,7 +79,34 @@
     }
     newLibrary();
   }
+
+  function setSort(key: SortKey, asc: boolean) {
+    sortKey = key;
+    sortAsc = asc;
+    openMenu = null;
+  }
+  function toggleMenu(id: string) {
+    openMenu = openMenu === id ? null : id;
+  }
+  function pickStatus(s: Status | "all") {
+    statusFilter = s;
+    openMenu = null;
+  }
+  function toggleSource(s: string) {
+    const next = new Set(sourceFilter);
+    if (next.has(s)) next.delete(s);
+    else next.add(s);
+    sourceFilter = next;
+  }
+  function sortArrow(key: SortKey): string {
+    return sortKey === key ? (sortAsc ? " ▲" : " ▼") : "";
+  }
+  function onWindowClick(e: MouseEvent) {
+    if (openMenu && !(e.target as Element).closest(".col-head")) openMenu = null;
+  }
 </script>
+
+<svelte:window onclick={onWindowClick} />
 
 <div class="app">
   <header>
@@ -86,6 +140,14 @@
         </button>
       {/each}
     </div>
+    <div class="view-toggle">
+      <button class:active={viewMode === "list"} title="List view" onclick={() => (viewMode = "list")}>
+        ☰
+      </button>
+      <button class:active={viewMode === "grid"} title="Grid view" onclick={() => (viewMode = "grid")}>
+        ▦
+      </button>
+    </div>
   </div>
 
   <main>
@@ -98,15 +160,111 @@
       </div>
     {:else if filtered.length === 0}
       <div class="empty"><p>No games match your filter.</p></div>
+    {:else if viewMode === "grid"}
+      <div class="grid">
+        {#each filtered as game (game.id)}
+          <div class="card">
+            <div class="card-cover">
+              {#if game.coverUrl}
+                <img
+                  src={game.coverUrl}
+                  alt=""
+                  loading="lazy"
+                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                />
+              {/if}
+            </div>
+            <div class="card-title" title={game.title}>{game.title}</div>
+            <select
+              class="status status-{game.status}"
+              value={game.status}
+              onchange={(e) => onStatusChange(game, e)}
+            >
+              {#each STATUSES as s}
+                <option value={s}>{STATUS_LABELS[s]}</option>
+              {/each}
+            </select>
+          </div>
+        {/each}
+      </div>
     {:else}
       <table>
         <thead>
           <tr>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Since</th>
-            <th>Playtime</th>
-            <th>Sources</th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("title")}>Title{sortArrow("title")} ▾</button>
+                {#if openMenu === "title"}
+                  <div class="menu">
+                    <button onclick={() => setSort("title", true)}>Sort A → Z</button>
+                    <button onclick={() => setSort("title", false)}>Sort Z → A</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("status")}>Status{sortArrow("status")} ▾</button>
+                {#if openMenu === "status"}
+                  <div class="menu">
+                    <button onclick={() => setSort("status", true)}>Sort ↑</button>
+                    <button onclick={() => setSort("status", false)}>Sort ↓</button>
+                    <div class="menu-sep"></div>
+                    <button class:sel={statusFilter === "all"} onclick={() => pickStatus("all")}>All</button>
+                    {#each STATUSES as s}
+                      <button class:sel={statusFilter === s} onclick={() => pickStatus(s)}>
+                        {STATUS_LABELS[s]}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("since")}>Since{sortArrow("since")} ▾</button>
+                {#if openMenu === "since"}
+                  <div class="menu">
+                    <button onclick={() => setSort("since", false)}>Newest first</button>
+                    <button onclick={() => setSort("since", true)}>Oldest first</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("playtime")}>
+                  Playtime{sortArrow("playtime")} ▾
+                </button>
+                {#if openMenu === "playtime"}
+                  <div class="menu">
+                    <button onclick={() => setSort("playtime", false)}>Most first</button>
+                    <button onclick={() => setSort("playtime", true)}>Least first</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("sources")}>
+                  Sources{sourceFilter.size ? ` (${sourceFilter.size})` : ""} ▾
+                </button>
+                {#if openMenu === "sources"}
+                  <div class="menu">
+                    {#each SOURCE_IDS as s}
+                      <label class="check">
+                        <input type="checkbox" checked={sourceFilter.has(s)} onchange={() => toggleSource(s)} />
+                        {s}
+                      </label>
+                    {/each}
+                    {#if sourceFilter.size}
+                      <div class="menu-sep"></div>
+                      <button onclick={() => (sourceFilter = new Set())}>Clear filter</button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -258,6 +416,21 @@
     opacity: 0.7;
     font-size: 11px;
   }
+  .view-toggle {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .view-toggle button {
+    padding: 4px 9px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .view-toggle button.active {
+    background: #5865f2;
+    border-color: #5865f2;
+    color: #fff;
+  }
   main {
     flex: 1;
     overflow: auto;
@@ -280,16 +453,110 @@
     text-align: left;
     position: sticky;
     top: 0;
+    z-index: 2;
     background: #1b1d22;
     color: #8b909a;
     font-weight: 500;
     font-size: 12px;
-    padding: 10px 8px;
+    padding: 6px 8px;
     border-bottom: 1px solid #2c2f37;
+  }
+  .col-head {
+    position: relative;
+    display: inline-block;
+  }
+  .hbtn {
+    background: none;
+    border: none;
+    color: #8b909a;
+    font: inherit;
+    font-weight: 500;
+    padding: 4px 2px;
+    cursor: pointer;
+  }
+  .hbtn:hover {
+    color: #e6e6e6;
+  }
+  .menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 10;
+    min-width: 140px;
+    background: #21242b;
+    border: 1px solid #3a3e48;
+    border-radius: 8px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  }
+  .menu button,
+  .menu .check {
+    text-align: left;
+    background: none;
+    border: none;
+    color: #e6e6e6;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .menu button:hover,
+  .menu .check:hover {
+    background: #2c2f37;
+  }
+  .menu button.sel {
+    color: #aeb6ff;
+  }
+  .menu-sep {
+    height: 1px;
+    background: #3a3e48;
+    margin: 4px 2px;
   }
   td {
     padding: 8px;
     border-bottom: 1px solid #23262d;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+    padding-top: 14px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card-cover {
+    aspect-ratio: 3 / 4;
+    width: 100%;
+    border-radius: 8px;
+    background: #14161a;
+    border: 1px solid #2c2f37;
+    overflow: hidden;
+  }
+  .card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card .status {
+    width: 100%;
+    box-sizing: border-box;
   }
   .t-title {
     font-weight: 500;
