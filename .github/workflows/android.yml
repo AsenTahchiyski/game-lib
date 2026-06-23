@@ -12,6 +12,9 @@ jobs:
       contents: write # needed to publish the rolling release
     env:
       NDK_VERSION: "26.1.10909125"
+      # Present only once the repo's Android signing secrets are configured.
+      # Until then the sign/publish steps skip and the build stays green.
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,9 +34,11 @@ jobs:
       - name: Install Android NDK
         run: sdkmanager "ndk;${NDK_VERSION}"
 
+      # arm64 only — phones are arm64-v8a; dropping the other 3 ABIs is most of
+      # the size win (and a faster build).
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -48,26 +53,54 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
 
-      - name: Build debug APK
-        run: npm run tauri android build -- --apk --debug
+      # Optimized (minified, R8) release build, unsigned — we sign it ourselves
+      # below so we don't have to patch the regenerated Gradle project.
+      - name: Build release APK (arm64)
+        run: npm run tauri android build -- --apk --target aarch64
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
 
-      - name: Upload APK
+      # Zipalign + sign the unsigned release APK with apksigner. Skipped until
+      # the signing secrets are set, so the workflow stays green before then.
+      - name: Sign APK
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          UNSIGNED="$(find src-tauri/gen/android -path '*release*' -name '*-unsigned.apk' | head -1)"
+          test -n "$UNSIGNED" || { echo "No unsigned release APK found"; exit 1; }
+          echo "Signing $UNSIGNED using build-tools at $BT"
+          OUT="$RUNNER_TEMP/game-lib-arm64-release.apk"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/keystore.jks" --ks-pass env:KS_PASS \
+            --ks-key-alias "$ALIAS" --key-pass env:KEY_PASS \
+            --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "$OUT"
+          ls -lh "$OUT"
+          echo "APK_PATH=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload signed APK
+        if: env.APK_PATH != ''
         uses: actions/upload-artifact@v4
         with:
-          name: game-library-android-debug
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          name: game-library-android-release
+          path: ${{ env.APK_PATH }}
           if-no-files-found: ignore
 
       # Publish to a rolling prerelease so the APK has a stable, login-free
       # download URL that works directly from a phone (the GitHub mobile app
-      # can't download workflow artifacts).
+      # can't download workflow artifacts, but it can download releases).
       - name: Publish APK to latest-android release
-        if: github.ref == 'refs/heads/main'
+        if: env.APK_PATH != '' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-android
-          name: Latest Android (debug)
+          name: Latest Android (release, arm64)
           prerelease: true
-          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          files: ${{ env.APK_PATH }}
