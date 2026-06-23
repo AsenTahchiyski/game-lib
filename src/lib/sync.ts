@@ -12,6 +12,8 @@ export interface SteamGame {
   appid: number;
   name: string;
   playtimeMinutes: number;
+  metacritic?: number;
+  storeRating?: number;
 }
 
 export interface GogGame {
@@ -41,6 +43,7 @@ export interface IgnGame {
   title: string;
   status: Status; // already mapped to our vocabulary by the Rust side
   coverUrl?: string;
+  storeRating?: number; // IGN review score, normalized 0-100
 }
 
 export interface MergeResult {
@@ -55,6 +58,8 @@ interface Incoming {
   playtimeMinutes?: number; // only Steam exposes this
   status?: Status; // only IGN carries a curated status
   coverUrl?: string; // box art, where the source provides one
+  storeRating?: number; // the source store's own rating, 0-100
+  metacritic?: number; // 0-100
 }
 
 // Edition/version qualifiers that one store appends but another doesn't, e.g.
@@ -147,6 +152,10 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       bySource.set(ig.id, existing);
       if (ig.playtimeMinutes !== undefined) existing.playtimeMinutes = ig.playtimeMinutes;
       if (!existing.coverUrl && ig.coverUrl) existing.coverUrl = ig.coverUrl;
+      if (existing.storeRating === undefined && ig.storeRating !== undefined)
+        existing.storeRating = ig.storeRating;
+      if (existing.metacritic === undefined && ig.metacritic !== undefined)
+        existing.metacritic = ig.metacritic;
       if (ig.status && existing.status !== ig.status) {
         existing.status = ig.status;
         existing.statusChangedAt = now;
@@ -167,6 +176,8 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         // stamping today. Playtime stays undefined unless the source gave one.
         statusHistory: [],
         playtimeMinutes: ig.playtimeMinutes,
+        storeRating: ig.storeRating,
+        metacritic: ig.metacritic,
         addedAt: now,
         lastSyncedAt: now,
       };
@@ -199,6 +210,8 @@ function mergeDuplicate(target: Game, dup: Game): void {
     target.playtimeMinutes = Math.max(target.playtimeMinutes, dup.playtimeMinutes);
   }
   if (!target.coverUrl) target.coverUrl = dup.coverUrl;
+  if (target.storeRating === undefined) target.storeRating = dup.storeRating;
+  if (target.metacritic === undefined) target.metacritic = dup.metacritic;
   target.statusHistory = [...target.statusHistory, ...dup.statusHistory];
   if (dup.addedAt < target.addedAt) target.addedAt = dup.addedAt;
   if (dup.lastSyncedAt && (!target.lastSyncedAt || dup.lastSyncedAt > target.lastSyncedAt)) {
@@ -241,6 +254,8 @@ export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResu
       playtimeMinutes: g.playtimeMinutes,
       // Steam's portrait box art is derivable from the appid (no extra request).
       coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
+      storeRating: g.storeRating,
+      metacritic: g.metacritic,
     })),
   );
 }
@@ -270,6 +285,7 @@ export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
       title: g.title || `IGN game ${g.id}`,
       status: g.status,
       coverUrl: g.coverUrl,
+      storeRating: g.storeRating,
     })),
   );
 }

@@ -55,6 +55,8 @@ export interface Game {
   statusChangedAt?: string; // ISO-8601
   statusHistory: StatusEvent[];
   playtimeMinutes?: number; // undefined = unknown (most sources don't expose it)
+  storeRating?: number; // 0-100, the source store's own rating
+  metacritic?: number; // 0-100
   addedAt: string; // ISO-8601
   lastSyncedAt?: string; // ISO-8601
 }

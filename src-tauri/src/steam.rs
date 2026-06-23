@@ -29,6 +29,73 @@ pub struct SteamGame {
     pub appid: u32,
     pub name: String,
     pub playtime_minutes: u64,
+    pub metacritic: Option<u32>,   // 0-100, from the Steam store page
+    pub store_rating: Option<u32>, // 0-100, Steam review % positive
+}
+
+/// Metacritic score for an app from the store's appdetails endpoint. Best
+/// effort — returns None on any error or missing data.
+async fn fetch_metacritic(client: &reqwest::Client, appid: u32) -> Option<u32> {
+    let url =
+        format!("https://store.steampowered.com/api/appdetails?appids={appid}&filters=metacritic");
+    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    let key = appid.to_string();
+    v.get(key.as_str())?
+        .get("data")?
+        .get("metacritic")?
+        .get("score")?
+        .as_u64()
+        .map(|n| n as u32)
+}
+
+/// Steam's own rating (% positive reviews) from the appreviews endpoint.
+async fn fetch_store_rating(client: &reqwest::Client, appid: u32) -> Option<u32> {
+    let url = format!(
+        "https://store.steampowered.com/appreviews/{appid}\
+         ?json=1&language=all&num_per_page=0&purchase_type=all"
+    );
+    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    let q = v.get("query_summary")?;
+    let positive = q.get("total_positive")?.as_u64()?;
+    let total = q.get("total_reviews")?.as_u64()?;
+    if total == 0 {
+        return None;
+    }
+    Some(((positive as f64 / total as f64) * 100.0).round() as u32)
+}
+
+/// Fetch Metacritic + Steam review ratings for many appids with bounded
+/// concurrency. Failures are swallowed (the game just gets no rating), and the
+/// Steam store endpoints are rate-limited, so coverage may be partial.
+async fn fetch_ratings(
+    client: &reqwest::Client,
+    appids: Vec<u32>,
+) -> std::collections::HashMap<u32, (Option<u32>, Option<u32>)> {
+    const CONCURRENCY: usize = 12;
+    let mut out = std::collections::HashMap::new();
+    let mut iter = appids.into_iter();
+    let mut set = tokio::task::JoinSet::new();
+
+    let spawn_next = |set: &mut tokio::task::JoinSet<(u32, (Option<u32>, Option<u32>))>,
+                      it: &mut std::vec::IntoIter<u32>| {
+        if let Some(id) = it.next() {
+            let c = client.clone();
+            set.spawn(async move {
+                (id, (fetch_metacritic(&c, id).await, fetch_store_rating(&c, id).await))
+            });
+        }
+    };
+
+    for _ in 0..CONCURRENCY {
+        spawn_next(&mut set, &mut iter);
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok((id, ratings)) = res {
+            out.insert(id, ratings);
+        }
+        spawn_next(&mut set, &mut iter);
+    }
+    out
 }
 
 /// Fetch the user's owned Steam games + playtime via the official Web API.
@@ -68,7 +135,7 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
         format!("Could not parse Steam's response ({e}). Check the API key and SteamID.")
     })?;
 
-    Ok(parsed
+    let mut games: Vec<SteamGame> = parsed
         .response
         .games
         .into_iter()
@@ -76,6 +143,20 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             appid: g.appid,
             name: g.name,
             playtime_minutes: g.playtime_forever,
+            metacritic: None,
+            store_rating: None,
         })
-        .collect())
+        .collect();
+
+    // Enrich with ratings (best-effort; partial on rate limits).
+    let client = reqwest::Client::new();
+    let ratings = fetch_ratings(&client, games.iter().map(|g| g.appid).collect()).await;
+    for g in &mut games {
+        if let Some((metacritic, store_rating)) = ratings.get(&g.appid) {
+            g.metacritic = *metacritic;
+            g.store_rating = *store_rating;
+        }
+    }
+
+    Ok(games)
 }

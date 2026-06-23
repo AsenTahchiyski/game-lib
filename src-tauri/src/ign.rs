@@ -34,7 +34,7 @@ query SearchLibrary($userId: ID, $count: Int, $cursor: Cursor, $wishlist: Boolea
       paused
       wishlist
       backlog
-      object { metadata { names { name } } primaryImage { url } }
+      object { metadata { names { name } } primaryImage { url } primaryReview { score } }
     }
   }
 }"#;
@@ -111,11 +111,18 @@ struct LibraryObjectInner {
     metadata: Option<ObjectMetadata>,
     #[serde(rename = "primaryImage")]
     primary_image: Option<PrimaryImage>,
+    #[serde(rename = "primaryReview")]
+    primary_review: Option<PrimaryReview>,
 }
 
 #[derive(Deserialize)]
 struct PrimaryImage {
     url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PrimaryReview {
+    score: Option<f64>, // IGN review score, 0-10
 }
 
 #[derive(Deserialize)]
@@ -136,6 +143,7 @@ pub struct IgnGame {
     pub title: String,
     pub status: String,
     pub cover_url: Option<String>,
+    pub store_rating: Option<u32>, // IGN review score normalized to 0-100
 }
 
 /// Map IGN's six status booleans to one of our statuses. IGN has no "free"
@@ -268,11 +276,19 @@ pub async fn ign_sync(nickname: String) -> Result<Vec<IgnGame>, String> {
                 .as_ref()
                 .and_then(|i| i.primary_image.as_ref())
                 .and_then(|p| p.url.clone());
+            // IGN scores are out of 10; normalize to 0-100 to match other ratings.
+            let store_rating = o
+                .object
+                .as_ref()
+                .and_then(|i| i.primary_review.as_ref())
+                .and_then(|r| r.score)
+                .map(|s| (s * 10.0).round() as u32);
             IgnGame {
                 id: o.object_id.clone(),
                 title,
                 status: map_status(o).to_string(),
                 cover_url,
+                store_rating,
             }
         })
         .collect())

@@ -6,7 +6,7 @@
   import { formatPlaytime, formatDate } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
 
-  type SortKey = "title" | "status" | "since" | "playtime";
+  type SortKey = "title" | "status" | "since" | "playtime" | "rating" | "metacritic";
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
 
   let search = $state("");
@@ -30,6 +30,10 @@
         return (Date.parse(a.statusChangedAt ?? "") || 0) - (Date.parse(b.statusChangedAt ?? "") || 0);
       case "playtime":
         return (a.playtimeMinutes ?? -1) - (b.playtimeMinutes ?? -1);
+      case "rating":
+        return (a.storeRating ?? -1) - (b.storeRating ?? -1);
+      case "metacritic":
+        return (a.metacritic ?? -1) - (b.metacritic ?? -1);
     }
   }
 
@@ -246,6 +250,32 @@
             </th>
             <th>
               <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("rating")}>
+                  Rating{sortArrow("rating")} ▾
+                </button>
+                {#if openMenu === "rating"}
+                  <div class="menu">
+                    <button onclick={() => setSort("rating", false)}>Highest first</button>
+                    <button onclick={() => setSort("rating", true)}>Lowest first</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
+                <button class="hbtn" onclick={() => toggleMenu("metacritic")}>
+                  Metacritic{sortArrow("metacritic")} ▾
+                </button>
+                {#if openMenu === "metacritic"}
+                  <div class="menu">
+                    <button onclick={() => setSort("metacritic", false)}>Highest first</button>
+                    <button onclick={() => setSort("metacritic", true)}>Lowest first</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th>
+              <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("sources")}>
                   Sources{sourceFilter.size ? ` (${sourceFilter.size})` : ""} ▾
                 </button>
@@ -298,6 +328,8 @@
               </td>
               <td class="muted">{formatDate(game.statusChangedAt)}</td>
               <td class="muted">{formatPlaytime(game.playtimeMinutes)}</td>
+              <td class="muted">{game.storeRating ?? "—"}</td>
+              <td class="muted">{game.metacritic ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
                   <span class="src">{src}</span>
