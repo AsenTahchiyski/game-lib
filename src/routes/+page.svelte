@@ -41,6 +41,17 @@
   function onStatusChange(game: Game, e: Event) {
     setStatus(game, (e.target as HTMLSelectElement).value as Status);
   }
+
+  async function handleNew() {
+    if (app.library.games.length > 0 || app.dirty) {
+      const ok = await confirm(
+        "Start a new, empty library? The games currently loaded will be cleared, and any unsaved changes lost.",
+        { title: "New library", kind: "warning" },
+      );
+      if (!ok) return;
+    }
+    newLibrary();
+  }
 </script>
 
 <div class="app">
@@ -52,7 +63,7 @@
       </span>
     </div>
     <div class="actions">
-      <button onclick={newLibrary}>New</button>
+      <button onclick={handleNew}>New</button>
       <button onclick={openLibrary}>Open…</button>
       <button class="primary" onclick={handleSave} disabled={app.busy}>Save</button>
       <button onclick={() => (showSettings = true)}>Settings</button>
@@ -154,6 +165,8 @@
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
     color: #e6e6e6;
     background: #1b1d22;
+    /* Render native form controls (dropdowns, scrollbars) in dark mode. */
+    color-scheme: dark;
   }
   .app {
     height: 100vh;
@@ -208,11 +221,17 @@
     font-size: 13px;
   }
   .filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 12px 16px;
     border-bottom: 1px solid #2c2f37;
   }
   .search {
-    width: 100%;
+    flex: none;
+    width: 220px;
+    max-width: 100%;
     box-sizing: border-box;
     background: #14161a;
     border: 1px solid #3a3e48;
@@ -220,7 +239,6 @@
     padding: 8px 12px;
     color: #e6e6e6;
     font-size: 13px;
-    margin-bottom: 10px;
   }
   .chips {
     display: flex;
@@ -306,6 +324,12 @@
     border-radius: 6px;
     padding: 4px 6px;
     font-size: 13px;
+  }
+  /* Make the opened dropdown list dark too (some platforms render the popup
+     with a white background and light text otherwise). */
+  .status option {
+    background: #14161a;
+    color: #e6e6e6;
   }
   .sources .src {
     display: inline-block;
