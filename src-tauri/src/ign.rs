@@ -87,8 +87,10 @@ struct SearchLibrary {
 struct PageInfo {
     #[serde(rename = "hasNext")]
     has_next: bool,
+    // IGN's Cursor scalar is an integer offset, not a string. Keep it as an
+    // opaque JSON value and hand it straight back as the next request's cursor.
     #[serde(rename = "nextCursor")]
-    next_cursor: Option<String>,
+    next_cursor: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -285,7 +287,7 @@ async fn fetch_bucket(
     wishlist: Option<bool>,
 ) -> Result<Vec<LibraryObject>, String> {
     let mut objects = Vec::new();
-    let mut cursor: Option<String> = None;
+    let mut cursor: Option<serde_json::Value> = None;
     loop {
         let data: SearchLibraryData = graphql(
             client,
