@@ -50,9 +50,11 @@ export interface Game {
   coverUrl?: string; // box art / header image from whichever source has one
   sources: Sources;
   status: Status;
-  statusChangedAt: string; // ISO-8601, date the CURRENT status was set
+  // Date the CURRENT status was set. Undefined when unknown — e.g. imported
+  // games, where the source doesn't tell us when the status was chosen.
+  statusChangedAt?: string; // ISO-8601
   statusHistory: StatusEvent[];
-  playtimeMinutes: number;
+  playtimeMinutes?: number; // undefined = unknown (most sources don't expose it)
   addedAt: string; // ISO-8601
   lastSyncedAt?: string; // ISO-8601
 }

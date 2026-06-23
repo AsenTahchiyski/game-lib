@@ -1,4 +1,4 @@
-export function formatPlaytime(minutes: number): string {
+export function formatPlaytime(minutes: number | undefined): string {
   if (!minutes) return "—";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -7,7 +7,7 @@ export function formatPlaytime(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";

@@ -57,16 +57,34 @@ interface Incoming {
   coverUrl?: string; // box art, where the source provides one
 }
 
+// Edition/version qualifiers that one store appends but another doesn't, e.g.
+// Steam's "Batman: Arkham Asylum Game of the Year Edition" vs IGN's plain
+// "Batman: Arkham Asylum". Stripped only as a TRAILING run so a leading
+// "Ultimate Marvel vs. Capcom 3" stays distinct from "Marvel vs. Capcom 3".
+const EDITION_PHRASES = [
+  "game of the year edition",
+  "game of the year",
+  "directors cut",
+  "complete collection",
+];
+const EDITION_TRAILING =
+  /\s(edition|goty|remastered|remaster|redux|deluxe|ultimate|complete|definitive|enhanced|gold|premium|anniversary|special|standard|collection|bundle|hd)\s*$/;
+
 /**
  * Normalize a title for cross-store matching: lowercase, drop everything but
- * letters/digits, collapse whitespace. Deliberately conservative — it keeps
- * "Portal" and "Portal 2" distinct rather than risk false merges.
+ * letters/digits, collapse whitespace, then strip trailing edition qualifiers.
+ * Conservative — it keeps "Portal" and "Portal 2" distinct (numbers are kept)
+ * while merging "<game>" with "<game> - Definitive Edition".
  */
 function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  let s = ` ${title.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()} `;
+  for (const p of EDITION_PHRASES) s = s.split(` ${p} `).join(" ");
+  let prev: string;
+  do {
+    prev = s;
+    s = s.replace(EDITION_TRAILING, " ");
+  } while (s !== prev);
+  return s.replace(/\s+/g, " ").trim();
 }
 
 function getSourceId(game: Game, store: StoreId): string | undefined {
@@ -144,9 +162,11 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         coverUrl: ig.coverUrl,
         sources: {},
         status,
-        statusChangedAt: now,
-        statusHistory: [{ status, at: now }],
-        playtimeMinutes: ig.playtimeMinutes ?? 0,
+        // No statusChangedAt/history: a sync doesn't tell us when the status
+        // was actually chosen, so leave it unknown (shows "—") rather than
+        // stamping today. Playtime stays undefined unless the source gave one.
+        statusHistory: [],
+        playtimeMinutes: ig.playtimeMinutes,
         addedAt: now,
         lastSyncedAt: now,
       };
@@ -160,6 +180,55 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
   }
 
   return { added, updated };
+}
+
+// Fold `dup` into `target` — the same game arriving from another source or as a
+// different edition.
+function mergeDuplicate(target: Game, dup: Game): void {
+  Object.assign(target.sources, dup.sources);
+  // Keep the more meaningful status: one IGN carries (curated) and/or any
+  // non-default status outranks a plain "backlog".
+  const score = (g: Game) => (g.sources.ign ? 2 : 0) + (g.status !== "backlog" ? 1 : 0);
+  if (score(dup) > score(target)) {
+    target.status = dup.status;
+    target.statusChangedAt = dup.statusChangedAt;
+  }
+  if (target.playtimeMinutes === undefined) {
+    target.playtimeMinutes = dup.playtimeMinutes;
+  } else if (dup.playtimeMinutes !== undefined) {
+    target.playtimeMinutes = Math.max(target.playtimeMinutes, dup.playtimeMinutes);
+  }
+  if (!target.coverUrl) target.coverUrl = dup.coverUrl;
+  target.statusHistory = [...target.statusHistory, ...dup.statusHistory];
+  if (dup.addedAt < target.addedAt) target.addedAt = dup.addedAt;
+  if (dup.lastSyncedAt && (!target.lastSyncedAt || dup.lastSyncedAt > target.lastSyncedAt)) {
+    target.lastSyncedAt = dup.lastSyncedAt;
+  }
+}
+
+/**
+ * Collapse entries that resolve to the same normalized title into one game,
+ * combining their source ids. Fixes duplicates created before edition-aware
+ * matching existed (e.g. a Steam copy and an IGN copy sitting as two rows).
+ * Returns how many duplicates were merged away.
+ */
+export function dedupeLibrary(library: Library): number {
+  const byKey = new Map<string, Game>();
+  const kept: Game[] = [];
+  let merged = 0;
+  for (const g of library.games) {
+    const key = normalizeTitle(g.title);
+    const existing = key ? byKey.get(key) : undefined;
+    if (existing) {
+      mergeDuplicate(existing, g);
+      merged++;
+    } else {
+      kept.push(g);
+      if (key) byKey.set(key, g);
+    }
+  }
+  if (merged > 0) library.games = kept;
+  return merged;
 }
 
 export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResult {

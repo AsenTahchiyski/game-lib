@@ -7,6 +7,7 @@ import {
   mergeGogGames,
   mergeEpicGames,
   mergeIgnGames,
+  dedupeLibrary,
   type MergeResult,
 } from "./sync";
 
@@ -44,7 +45,10 @@ async function loadPath(path: string) {
   app.library = lib;
   app.currentPath = path;
   app.loadedMtime = await api.fileMtime(path);
-  app.dirty = false;
+  // Clean up any duplicates from before edition-aware matching existed; if it
+  // changed anything, leave the library marked dirty so the user can save it.
+  const removed = dedupeLibrary(app.library);
+  app.dirty = removed > 0;
   if (app.settings.lastLibraryPath !== path) {
     app.settings.lastLibraryPath = path;
     await persistSettings();
@@ -95,6 +99,7 @@ export async function syncSteamLibrary(): Promise<MergeResult> {
   try {
     const games = await api.syncSteam(steamApiKey, steamId);
     const result = mergeSteamGames(app.library, games);
+    dedupeLibrary(app.library);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;
@@ -129,6 +134,7 @@ export async function syncGogLibrary(): Promise<MergeResult> {
     app.settings.gogRefreshToken = refreshToken; // GOG may rotate it
     await persistSettings();
     const result = mergeGogGames(app.library, games);
+    dedupeLibrary(app.library);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;
@@ -163,6 +169,7 @@ export async function syncEpicLibrary(): Promise<MergeResult> {
     app.settings.epicRefreshToken = refreshToken;
     await persistSettings();
     const result = mergeEpicGames(app.library, games);
+    dedupeLibrary(app.library);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;
@@ -186,6 +193,7 @@ export async function syncIgnLibrary(): Promise<MergeResult> {
   try {
     const games = await api.ignSync(nickname);
     const result = mergeIgnGames(app.library, games);
+    dedupeLibrary(app.library);
     app.library.updatedAt = new Date().toISOString();
     app.dirty = true;
     return result;
