@@ -19,9 +19,12 @@ query PlaylistUser($nickname: String) {
   }
 }"#;
 
+// Note: the default (unfiltered) searchLibrary returns only "in-library" items
+// and EXCLUDES wishlist — wishlist is a separate bucket. We page it explicitly
+// with $wishlist so those games come through too.
 const SEARCH_LIBRARY_QUERY: &str = r#"
-query SearchLibrary($userId: ID, $count: Int, $cursor: Cursor) {
-  searchLibrary(userId: $userId, count: $count, cursor: $cursor, sortBy: "updatedAt", sortOrder: "desc") {
+query SearchLibrary($userId: ID, $count: Int, $cursor: Cursor, $wishlist: Boolean) {
+  searchLibrary(userId: $userId, count: $count, cursor: $cursor, wishlist: $wishlist, sortBy: "updatedAt", sortOrder: "desc") {
     pageInfo { hasNext nextCursor total }
     libraryObjects {
       objectId
@@ -224,18 +227,14 @@ pub async fn ign_sync(nickname: String) -> Result<Vec<IgnGame>, String> {
         );
     }
 
-    let mut games = Vec::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let data: SearchLibraryData = graphql(
-            &client,
-            SEARCH_LIBRARY_QUERY,
-            serde_json::json!({ "userId": user.id, "count": 100, "cursor": cursor }),
-        )
-        .await?;
+    // Two buckets: the default in-library set, and wishlist (which the default
+    // query omits). `wishlist: None` is the unfiltered in-library set.
+    let mut objects = fetch_bucket(&client, &user.id, None).await?;
+    objects.extend(fetch_bucket(&client, &user.id, Some(true)).await?);
 
-        let page = data.search_library;
-        for o in &page.library_objects {
+    Ok(objects
+        .iter()
+        .map(|o| {
             let title = o
                 .object
                 .as_ref()
@@ -243,22 +242,45 @@ pub async fn ign_sync(nickname: String) -> Result<Vec<IgnGame>, String> {
                 .and_then(|m| m.names.as_ref())
                 .and_then(|n| n.name.clone())
                 .unwrap_or_else(|| format!("IGN game {}", o.object_id));
-            games.push(IgnGame {
+            IgnGame {
                 id: o.object_id.clone(),
                 title,
                 status: map_status(o).to_string(),
-            });
-        }
-
-        if page.page_info.has_next {
-            match page.page_info.next_cursor {
-                Some(c) => cursor = Some(c),
-                None => break,
             }
-        } else {
-            break;
+        })
+        .collect())
+}
+
+/// Page through one searchLibrary bucket. `wishlist = Some(true)` fetches the
+/// wishlist bucket; `None` fetches the default in-library set (which excludes
+/// wishlist). Follows the cursor until the last page.
+async fn fetch_bucket(
+    client: &reqwest::Client,
+    user_id: &str,
+    wishlist: Option<bool>,
+) -> Result<Vec<LibraryObject>, String> {
+    let mut objects = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let data: SearchLibraryData = graphql(
+            client,
+            SEARCH_LIBRARY_QUERY,
+            serde_json::json!({
+                "userId": user_id,
+                "count": 100,
+                "cursor": cursor,
+                "wishlist": wishlist,
+            }),
+        )
+        .await?;
+
+        let page = data.search_library;
+        objects.extend(page.library_objects);
+
+        match (page.page_info.has_next, page.page_info.next_cursor) {
+            (true, Some(c)) => cursor = Some(c),
+            _ => break,
         }
     }
-
-    Ok(games)
+    Ok(objects)
 }
