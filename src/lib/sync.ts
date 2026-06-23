@@ -17,6 +17,7 @@ export interface SteamGame {
 export interface GogGame {
   id: string;
   title: string;
+  coverUrl?: string;
 }
 
 export interface GogSyncResult {
@@ -27,6 +28,7 @@ export interface GogSyncResult {
 export interface EpicGame {
   id: string;
   title: string;
+  coverUrl?: string;
 }
 
 export interface EpicSyncResult {
@@ -38,6 +40,7 @@ export interface IgnGame {
   id: string;
   title: string;
   status: Status; // already mapped to our vocabulary by the Rust side
+  coverUrl?: string;
 }
 
 export interface MergeResult {
@@ -51,6 +54,7 @@ interface Incoming {
   title: string;
   playtimeMinutes?: number; // only Steam exposes this
   status?: Status; // only IGN carries a curated status
+  coverUrl?: string; // box art, where the source provides one
 }
 
 /**
@@ -124,6 +128,7 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       setSourceId(existing, store, ig.id);
       bySource.set(ig.id, existing);
       if (ig.playtimeMinutes !== undefined) existing.playtimeMinutes = ig.playtimeMinutes;
+      if (!existing.coverUrl && ig.coverUrl) existing.coverUrl = ig.coverUrl;
       if (ig.status && existing.status !== ig.status) {
         existing.status = ig.status;
         existing.statusChangedAt = now;
@@ -136,6 +141,7 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       const game: Game = {
         id: crypto.randomUUID(),
         title: ig.title,
+        coverUrl: ig.coverUrl,
         sources: {},
         status,
         statusChangedAt: now,
@@ -164,6 +170,8 @@ export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResu
       id: String(g.appid),
       title: g.name || `Steam app ${g.appid}`,
       playtimeMinutes: g.playtimeMinutes,
+      // Steam's portrait box art is derivable from the appid (no extra request).
+      coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
     })),
   );
 }
@@ -172,7 +180,7 @@ export function mergeGogGames(library: Library, games: GogGame[]): MergeResult {
   return mergeGames(
     library,
     "gog",
-    games.map((g) => ({ id: g.id, title: g.title || `GOG product ${g.id}` })),
+    games.map((g) => ({ id: g.id, title: g.title || `GOG product ${g.id}`, coverUrl: g.coverUrl })),
   );
 }
 
@@ -180,7 +188,7 @@ export function mergeEpicGames(library: Library, games: EpicGame[]): MergeResult
   return mergeGames(
     library,
     "epic",
-    games.map((g) => ({ id: g.id, title: g.title || `Epic item ${g.id}` })),
+    games.map((g) => ({ id: g.id, title: g.title || `Epic item ${g.id}`, coverUrl: g.coverUrl })),
   );
 }
 
@@ -188,6 +196,11 @@ export function mergeIgnGames(library: Library, games: IgnGame[]): MergeResult {
   return mergeGames(
     library,
     "ign",
-    games.map((g) => ({ id: g.id, title: g.title || `IGN game ${g.id}`, status: g.status })),
+    games.map((g) => ({
+      id: g.id,
+      title: g.title || `IGN game ${g.id}`,
+      status: g.status,
+      coverUrl: g.coverUrl,
+    })),
   );
 }

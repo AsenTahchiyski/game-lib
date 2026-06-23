@@ -101,7 +101,21 @@
         <tbody>
           {#each filtered as game (game.id)}
             <tr>
-              <td class="t-title">{game.title}</td>
+              <td class="t-title">
+                <div class="title-cell">
+                  <div class="cover">
+                    {#if game.coverUrl}
+                      <img
+                        src={game.coverUrl}
+                        alt=""
+                        loading="lazy"
+                        onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                      />
+                    {/if}
+                  </div>
+                  <span>{game.title}</span>
+                </div>
+              </td>
               <td>
                 <select
                   class="status status-{game.status}"
@@ -261,6 +275,26 @@
   }
   .t-title {
     font-weight: 500;
+  }
+  .title-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cover {
+    flex: none;
+    width: 40px;
+    height: 56px;
+    border-radius: 4px;
+    background: #14161a;
+    border: 1px solid #2c2f37;
+    overflow: hidden;
+  }
+  .cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
   .muted {
     color: #8b909a;

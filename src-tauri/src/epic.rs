@@ -30,6 +30,8 @@ struct CatalogItem {
     title: String,
     #[serde(default)]
     categories: Vec<Category>,
+    #[serde(default, rename = "keyImages")]
+    key_images: Vec<KeyImage>,
 }
 
 #[derive(Deserialize)]
@@ -38,11 +40,20 @@ struct Category {
     path: String,
 }
 
+#[derive(Deserialize)]
+struct KeyImage {
+    #[serde(default, rename = "type")]
+    image_type: String,
+    #[serde(default)]
+    url: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EpicGame {
     pub id: String,
     pub title: String,
+    pub cover_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -50,6 +61,21 @@ pub struct EpicGame {
 pub struct EpicSyncResult {
     pub refresh_token: String,
     pub games: Vec<EpicGame>,
+}
+
+/// Choose the best box-art image: prefer a tall/portrait image, then any other
+/// non-logo image. Returns `None` if nothing usable is present.
+fn pick_cover(images: &[KeyImage]) -> Option<String> {
+    const PREFERRED: [&str; 3] = ["DieselGameBoxTall", "OfferImageTall", "Thumbnail"];
+    for ty in PREFERRED {
+        if let Some(img) = images.iter().find(|i| i.image_type == ty && !i.url.is_empty()) {
+            return Some(img.url.clone());
+        }
+    }
+    images
+        .iter()
+        .find(|i| !i.url.is_empty() && i.image_type != "DieselGameBoxLogo")
+        .map(|i| i.url.clone())
 }
 
 /// URL the user opens to log into Epic. After login Epic redirects to a page
@@ -159,9 +185,11 @@ pub async fn epic_sync(refresh_token: String) -> Result<EpicSyncResult, String> 
         for (id, item) in items {
             let is_game = item.categories.iter().any(|c| c.path == "games");
             if is_game {
+                let cover_url = pick_cover(&item.key_images);
                 games.push(EpicGame {
                     id,
                     title: item.title,
+                    cover_url,
                 });
             }
         }

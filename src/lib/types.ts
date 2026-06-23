@@ -47,6 +47,7 @@ export interface StatusEvent {
 export interface Game {
   id: string;
   title: string;
+  coverUrl?: string; // box art / header image from whichever source has one
   sources: Sources;
   status: Status;
   statusChangedAt: string; // ISO-8601, date the CURRENT status was set

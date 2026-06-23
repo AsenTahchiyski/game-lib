@@ -18,6 +18,7 @@ struct TokenResponse {
 pub struct GogGame {
     pub id: String,
     pub title: String,
+    pub cover_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -83,6 +84,9 @@ struct FilteredProducts {
 struct GogProduct {
     id: serde_json::Value, // GOG returns this as a number
     title: String,
+    // Protocol-relative path without extension, e.g. "//images.gog.com/<hash>".
+    #[serde(default)]
+    image: Option<String>,
 }
 
 /// Refresh the access token and fetch all owned GOG games (id + title). Returns
@@ -123,7 +127,17 @@ pub async fn gog_sync(refresh_token: String) -> Result<GogSyncResult, String> {
                 serde_json::Value::String(s) => s,
                 _ => continue,
             };
-            games.push(GogGame { id, title: p.title });
+            // GOG's `image` is a protocol-relative, extension-less path; the
+            // _392 box-art variant is a reliable size to request.
+            let cover_url = p
+                .image
+                .filter(|s| !s.is_empty())
+                .map(|s| format!("https:{s}_392.jpg"));
+            games.push(GogGame {
+                id,
+                title: p.title,
+                cover_url,
+            });
         }
 
         if data.total_pages == 0 || page >= data.total_pages {

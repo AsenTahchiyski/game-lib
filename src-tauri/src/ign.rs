@@ -34,7 +34,7 @@ query SearchLibrary($userId: ID, $count: Int, $cursor: Cursor, $wishlist: Boolea
       paused
       wishlist
       backlog
-      object { metadata { names { name } } }
+      object { metadata { names { name } } primaryImage { url } }
     }
   }
 }"#;
@@ -107,6 +107,13 @@ struct LibraryObject {
 #[derive(Deserialize)]
 struct LibraryObjectInner {
     metadata: Option<ObjectMetadata>,
+    #[serde(rename = "primaryImage")]
+    primary_image: Option<PrimaryImage>,
+}
+
+#[derive(Deserialize)]
+struct PrimaryImage {
+    url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +133,7 @@ pub struct IgnGame {
     pub id: String,
     pub title: String,
     pub status: String,
+    pub cover_url: Option<String>,
 }
 
 /// Map IGN's six status booleans to one of our statuses. IGN has no "free"
@@ -242,10 +250,16 @@ pub async fn ign_sync(nickname: String) -> Result<Vec<IgnGame>, String> {
                 .and_then(|m| m.names.as_ref())
                 .and_then(|n| n.name.clone())
                 .unwrap_or_else(|| format!("IGN game {}", o.object_id));
+            let cover_url = o
+                .object
+                .as_ref()
+                .and_then(|i| i.primary_image.as_ref())
+                .and_then(|p| p.url.clone());
             IgnGame {
                 id: o.object_id.clone(),
                 title,
                 status: map_status(o).to_string(),
+                cover_url,
             }
         })
         .collect())
