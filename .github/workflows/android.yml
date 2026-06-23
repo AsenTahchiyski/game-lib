@@ -93,6 +93,21 @@ jobs:
           path: ${{ env.APK_PATH }}
           if-no-files-found: ignore
 
+      # The publish action adds assets but never removes old ones, so clear the
+      # rolling release first — otherwise stale APKs (e.g. the old 500 MB debug
+      # build) pile up under the same tag.
+      - name: Clear stale release assets
+        if: env.APK_PATH != '' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest-android --repo "$GITHUB_REPOSITORY" \
+            --json assets -q '.assets[].name' 2>/dev/null \
+          | while read -r name; do
+              [ -n "$name" ] && gh release delete-asset latest-android "$name" \
+                --repo "$GITHUB_REPOSITORY" -y || true
+            done
+
       # Publish to a rolling prerelease so the APK has a stable, login-free
       # download URL that works directly from a phone (the GitHub mobile app
       # can't download workflow artifacts, but it can download releases).
