@@ -61,7 +61,21 @@ jobs:
             src-tauri/target/release/bundle/**
           if-no-files-found: ignore
 
-      # Publish the Linux AppImage to a rolling prerelease so it has a stable,
+      # Clear old assets first so version-stamped bundles (e.g. a previous
+      # 0.1.0) don't pile up under the rolling tag. Only the Ubuntu leg.
+      - name: Clear stale release assets
+        if: matrix.platform == 'ubuntu-22.04' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest-desktop --repo "$GITHUB_REPOSITORY" \
+            --json assets -q '.assets[].name' 2>/dev/null \
+          | while read -r name; do
+              [ -n "$name" ] && gh release delete-asset latest-desktop "$name" \
+                --repo "$GITHUB_REPOSITORY" -y || true
+            done
+
+      # Publish the Linux bundles to a rolling prerelease so they have a stable,
       # login-free, one-click download URL. Only the Ubuntu leg publishes.
       - name: Publish Linux bundles to latest-desktop release
         if: matrix.platform == 'ubuntu-22.04' && github.ref == 'refs/heads/main'
