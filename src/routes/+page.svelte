@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { app, init, openLibrary, newLibrary, saveLibrary, setStatus } from "$lib/store.svelte";
@@ -24,8 +25,12 @@
   let showSettings = $state(false);
   let showAdd = $state(false);
   let selectedGame = $state<Game | null>(null);
+  let version = $state("");
 
-  onMount(init);
+  onMount(async () => {
+    await init();
+    version = await getVersion();
+  });
 
   function compareBy(a: Game, b: Game, key: SortKey): number {
     switch (key) {
@@ -162,6 +167,7 @@
   <header>
     <div class="title">
       <strong>Game Library</strong>
+      {#if version}<span class="ver">v{version}</span>{/if}
       <span class="path">
         {app.currentPath ?? "No file"}{app.dirty ? " •" : ""}
       </span>
@@ -422,6 +428,11 @@
   }
   .title strong {
     font-size: 15px;
+  }
+  .ver {
+    margin-left: 6px;
+    font-size: 11px;
+    color: #6b7280;
   }
   .path {
     margin-left: 10px;
