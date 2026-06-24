@@ -11,7 +11,8 @@ native HTTP, OAuth, and file IO (no browser CORS limits, real file access).
 ## Features
 
 - **Seven statuses** — Wishlist, Backlog, Playing, Beat, Quit, Paused, Free.
-  Every status change records its date and is appended to a per-game history.
+  A status *you* set records its date and appends to a per-game history; imported
+  statuses are left dateless (shown as `—`) rather than faking an import date.
 - **Auto-populated from your stores** — one-click sync pulls your library from:
   - **Steam** — official Web API (API key + SteamID). Includes playtime.
   - **GOG** — unofficial OAuth (log in once, paste the code; token stored on-device).
@@ -20,8 +21,16 @@ native HTTP, OAuth, and file IO (no browser CORS limits, real file access).
     profile (enter your nickname or profile URL — no login). This is the only
     source that carries status; the stores convey ownership only.
 - **Cross-source de-duplication** — a game owned on Steam *and* listed in IGN
-  becomes one entry holding both source ids (matched by id, then normalized
-  title), so syncing in any order won't create duplicates.
+  becomes one entry holding both source ids. Matched by source id, then by
+  normalized title with trailing edition qualifiers stripped (so "Batman: Arkham
+  Asylum **Game of the Year Edition**" merges with plain "Batman: Arkham Asylum"),
+  while keeping distinct numbered titles apart ("Portal" vs "Portal 2"). Existing
+  duplicates are collapsed on file open.
+- **Ratings** — each game shows the source store's own rating plus a Metacritic
+  score where available: IGN's review score, Steam's review % and Metacritic
+  (best-effort; partial when Steam rate-limits). Sortable.
+- **List & grid views** — toggle between a dense sortable table and a cover-art
+  grid. Every column header sorts; Status and Sources filter.
 - **Cover art** — box art from IGN, Steam (derived from appid), Epic, and GOG.
 - **Your data, one file** — the library is a single human-readable JSON file you
   choose (e.g. on a NAS) so it can sync across devices and be shared. Secrets
@@ -60,13 +69,27 @@ npm run check        # type-check the frontend (fast, runs anywhere)
 npm run tauri dev    # run the desktop app (needs the Tauri system deps)
 ```
 
-CI produces downloadable artifacts on every push to `main`:
+CI builds on every push to `main`:
 
 - **Desktop** (`build.yml`): Linux (`.AppImage`/`.deb`/`.rpm`), Windows, macOS.
-- **Android** (`android.yml`): debug APK.
+- **Android** (`android.yml`): signed, optimized arm64 release APK (~15 MB).
 
-Download them from the run's **Artifacts** section. The Linux `.AppImage` needs
-no install — `chmod +x` and run.
+Each build also refreshes a rolling **prerelease** with a stable, login-free
+download URL (the GitHub mobile app can't download Actions artifacts, but it can
+download releases):
+
+- Linux: [`latest-desktop`](../../releases/tag/latest-desktop) — `.deb` + `.AppImage`
+- Android: [`latest-android`](../../releases/tag/latest-android) — the APK
+
+On Linux Mint/Ubuntu, `sudo apt install ./Game.Library_*.deb` is the most reliable
+(the `.AppImage` needs `libfuse2`). Full bundles are also on each run's **Artifacts**.
+
+### Android signing
+
+The release APK is signed in CI with a keystore supplied via repo secrets:
+`ANDROID_KEYSTORE_BASE64` (base64 of a JKS/PKCS#12 keystore),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`. Without
+them the build still succeeds but skips the signing/publish steps.
 
 ## Platform support
 
@@ -77,7 +100,7 @@ the code is identical, but packaging requires a Mac and an Apple Developer accou
 
 ```
 src/                 SvelteKit frontend
-  routes/+page.svelte  library view (list, filters, status editing)
+  routes/+page.svelte  library view (list/grid, sort/filter, status editing)
   lib/
     types.ts           data model (the shared JSON schema)
     sync.ts            cross-source merge + de-duplication
