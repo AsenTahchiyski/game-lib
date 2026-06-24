@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { confirm } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { app, init, openLibrary, newLibrary, saveLibrary, setStatus } from "$lib/store.svelte";
-  import { STATUSES, STATUS_LABELS, type Status, type Game } from "$lib/types";
+  import { STATUSES, STATUS_LABELS, TAGS, TAG_LABELS, type Status, type Game } from "$lib/types";
   import { formatPlaytime, formatDate } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
+  import GameDetails from "$lib/GameDetails.svelte";
+  import AddGame from "$lib/AddGame.svelte";
 
   type SortKey = "title" | "status" | "since" | "playtime" | "rating" | "metacritic";
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
@@ -17,7 +20,10 @@
   let sourceFilter = $state(new Set<string>());
   let openMenu = $state<string | null>(null);
   let openStatusFor = $state<string | null>(null);
+  let tagFilter = $state(new Set<string>());
   let showSettings = $state(false);
+  let showAdd = $state(false);
+  let selectedGame = $state<Game | null>(null);
 
   onMount(init);
 
@@ -45,7 +51,8 @@
         (statusFilter === "all" || g.status === statusFilter) &&
         g.title.toLowerCase().includes(q) &&
         (sourceFilter.size === 0 ||
-          SOURCE_IDS.some((s) => sourceFilter.has(s) && (g.sources as Record<string, unknown>)[s])),
+          SOURCE_IDS.some((s) => sourceFilter.has(s) && (g.sources as Record<string, unknown>)[s])) &&
+        (tagFilter.size === 0 || (g.tags ?? []).some((t) => tagFilter.has(t))),
     );
     const dir = sortAsc ? 1 : -1;
     return list.sort((a, b) => dir * compareBy(a, b, sortKey));
@@ -73,6 +80,17 @@
   function chooseStatus(game: Game, s: Status) {
     setStatus(game, s);
     openStatusFor = null;
+  }
+
+  function toggleTagFilter(t: string) {
+    const next = new Set(tagFilter);
+    if (next.has(t)) next.delete(t);
+    else next.add(t);
+    tagFilter = next;
+  }
+
+  function openAllkeyshop(game: Game) {
+    openUrl(`https://www.allkeyshop.com/blog/?s=${encodeURIComponent(game.title)}`);
   }
 
   async function handleNew() {
@@ -151,6 +169,7 @@
     <div class="actions">
       <button onclick={handleNew}>New</button>
       <button onclick={openLibrary}>Open…</button>
+      <button onclick={() => (showAdd = true)}>+ Add</button>
       <button class="primary" onclick={handleSave} disabled={app.busy}>Save</button>
       <button onclick={() => (showSettings = true)}>Settings</button>
     </div>
@@ -169,6 +188,13 @@
       {#each STATUSES as s}
         <button class:active={statusFilter === s} onclick={() => (statusFilter = s)}>
           {STATUS_LABELS[s]} <span class="count">{counts[s]}</span>
+        </button>
+      {/each}
+    </div>
+    <div class="chips tag-chips">
+      {#each TAGS as t}
+        <button class:active={tagFilter.has(t)} onclick={() => toggleTagFilter(t)}>
+          {TAG_LABELS[t]}
         </button>
       {/each}
     </div>
@@ -196,7 +222,7 @@
       <div class="grid">
         {#each filtered as game (game.id)}
           <div class="card">
-            <div class="card-cover">
+            <button class="card-cover coverbtn" onclick={() => (selectedGame = game)}>
               {#if game.coverUrl}
                 <img
                   src={game.coverUrl}
@@ -205,10 +231,10 @@
                   onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
                 />
               {/if}
-            </div>
-            <div class="card-title" title={game.title}>
+            </button>
+            <button class="card-title title-link" title={game.title} onclick={() => (selectedGame = game)}>
               {@render storeBadges(game)}{game.title}
-            </div>
+            </button>
             {@render statusControl(game)}
           </div>
         {/each}
@@ -324,7 +350,7 @@
             <tr class="row-{game.status}">
               <td class="t-title">
                 <div class="title-cell">
-                  <div class="cover">
+                  <button class="cover coverbtn" onclick={() => (selectedGame = game)}>
                     {#if game.coverUrl}
                       <img
                         src={game.coverUrl}
@@ -333,8 +359,11 @@
                         onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
                       />
                     {/if}
-                  </div>
-                  <span>{game.title}</span>
+                  </button>
+                  <button class="title-link" onclick={() => (selectedGame = game)}>{game.title}</button>
+                  {#if game.status === "wishlist"}
+                    <button class="aks" title="Check key prices" onclick={() => openAllkeyshop(game)}>💰</button>
+                  {/if}
                 </div>
               </td>
               <td>{@render statusControl(game)}</td>
@@ -357,6 +386,14 @@
 
 {#if showSettings}
   <Settings onclose={() => (showSettings = false)} />
+{/if}
+
+{#if showAdd}
+  <AddGame onclose={() => (showAdd = false)} />
+{/if}
+
+{#if selectedGame}
+  <GameDetails game={selectedGame} onclose={() => (selectedGame = null)} />
 {/if}
 
 <style>
@@ -592,6 +629,8 @@
     display: block;
   }
   .card-title {
+    display: block;
+    width: 100%;
     font-size: 13px;
     font-weight: 700;
     white-space: nowrap;
@@ -635,6 +674,33 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+  .coverbtn {
+    padding: 0;
+    display: block;
+    cursor: pointer;
+  }
+  .title-link {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #e6e6e6;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: 700;
+    text-align: left;
+  }
+  .title-link:hover {
+    text-decoration: underline;
+  }
+  .aks {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 2px;
+    flex: none;
   }
   .cover {
     flex: none;

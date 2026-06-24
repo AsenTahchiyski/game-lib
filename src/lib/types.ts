@@ -30,6 +30,17 @@ export const STATUS_LABELS: Record<Status, string> = {
   free: "Free",
 };
 
+// Tags are an orthogonal dimension to status: a game can be e.g. both "Beat"
+// and "Coop". Free-form in the data, but these are the built-in ones.
+export type Tag = "coop" | "casual";
+
+export const TAGS: Tag[] = ["coop", "casual"];
+
+export const TAG_LABELS: Record<Tag, string> = {
+  coop: "Coop",
+  casual: "Casual",
+};
+
 export type StoreId = "steam" | "gog" | "epic" | "ign";
 
 export interface Sources {
@@ -57,6 +68,7 @@ export interface Game {
   playtimeMinutes?: number; // undefined = unknown (most sources don't expose it)
   storeRating?: number; // 0-100, the source store's own rating
   metacritic?: number; // 0-100
+  tags?: string[]; // orthogonal labels, e.g. "coop", "casual"
   addedAt: string; // ISO-8601
   lastSyncedAt?: string; // ISO-8601
 }

@@ -36,6 +36,40 @@ export function setStatus(game: Game, status: Status) {
   touch();
 }
 
+/** Remove a single game from the library. */
+export function removeGame(game: Game) {
+  app.library.games = app.library.games.filter((g) => g.id !== game.id);
+  touch();
+}
+
+/** Manually add a game straight to the Wishlist. Optionally attach a Steam app
+ *  id so it gets a cover (and can be matched/enriched by a later Steam sync). */
+export function addManualGame(title: string, steamAppid?: number): Game {
+  const now = new Date().toISOString();
+  const game: Game = {
+    id: crypto.randomUUID(),
+    title: title.trim(),
+    coverUrl: steamAppid
+      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppid}/library_600x900.jpg`
+      : undefined,
+    sources: steamAppid ? { steam: { appid: steamAppid } } : {},
+    status: "wishlist",
+    statusChangedAt: now,
+    statusHistory: [{ status: "wishlist", at: now }],
+    addedAt: now,
+  };
+  app.library.games.push(game);
+  touch();
+  return game;
+}
+
+/** Toggle an orthogonal tag (e.g. "coop", "casual") on a game. */
+export function toggleTag(game: Game, tag: string) {
+  const tags = game.tags ?? [];
+  game.tags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+  touch();
+}
+
 export async function persistSettings() {
   await api.saveSettings($state.snapshot(app.settings));
 }
