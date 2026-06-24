@@ -75,20 +75,40 @@ const EDITION_PHRASES = [
 const EDITION_TRAILING =
   /\s(edition|goty|remastered|remaster|redux|deluxe|ultimate|complete|definitive|enhanced|gold|premium|anniversary|special|standard|collection|bundle|hd)\s*$/;
 
+// Multi-character Roman numerals -> Arabic, so "Wolfenstein II" matches
+// "Wolfenstein 2". Single letters (i, v, x) are intentionally excluded: they're
+// too easily real words/letters in titles (e.g. "Mega Man X").
+const ROMAN: Record<string, string> = {
+  ii: "2", iii: "3", iv: "4", vi: "6", vii: "7", viii: "8", ix: "9",
+  xi: "11", xii: "12", xiii: "13", xiv: "14", xv: "15", xvi: "16",
+  xvii: "17", xviii: "18", xix: "19", xx: "20",
+};
+
 /**
- * Normalize a title for cross-store matching: lowercase, drop everything but
- * letters/digits, collapse whitespace, then strip trailing edition qualifiers.
- * Conservative — it keeps "Portal" and "Portal 2" distinct (numbers are kept)
- * while merging "<game>" with "<game> - Definitive Edition".
+ * Normalize a title for cross-store matching. Beyond lowercasing and stripping
+ * punctuation it unifies common spelling variants across stores: "&" vs "and",
+ * Roman vs Arabic numerals, bracketed qualifiers like "[2014]"/"(GOTY)", and
+ * trailing edition words. Conservative — it keeps "Portal" and "Portal 2"
+ * distinct (numbers are preserved) and only converts unambiguous numerals.
  */
 function normalizeTitle(title: string): string {
-  let s = ` ${title.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()} `;
+  let s = title.toLowerCase();
+  // Drop bracketed/parenthesized qualifiers, e.g. "[2014]", "(GOTY)". Targets the
+  // disambiguation suffix without touching year-named games like "FIFA 2014".
+  s = s.replace(/[[(][^\])]*[\])]/g, " ");
+  s = s.replace(/&/g, " and ");
+  s = ` ${s.replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()} `;
   for (const p of EDITION_PHRASES) s = s.split(` ${p} `).join(" ");
   let prev: string;
   do {
     prev = s;
     s = s.replace(EDITION_TRAILING, " ");
   } while (s !== prev);
+  s = s
+    .trim()
+    .split(" ")
+    .map((t) => ROMAN[t] ?? t)
+    .join(" ");
   return s.replace(/\s+/g, " ").trim();
 }
 
