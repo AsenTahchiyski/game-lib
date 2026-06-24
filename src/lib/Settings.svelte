@@ -252,6 +252,7 @@
   .overlay {
     position: fixed;
     inset: 0;
+    z-index: 1000; /* above the sticky table header and column/status menus */
     background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;

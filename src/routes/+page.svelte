@@ -16,6 +16,7 @@
   let sortAsc = $state(true);
   let sourceFilter = $state(new Set<string>());
   let openMenu = $state<string | null>(null);
+  let openStatusFor = $state<string | null>(null);
   let showSettings = $state(false);
 
   onMount(init);
@@ -69,8 +70,9 @@
     }
   }
 
-  function onStatusChange(game: Game, e: Event) {
-    setStatus(game, (e.target as HTMLSelectElement).value as Status);
+  function chooseStatus(game: Game, s: Status) {
+    setStatus(game, s);
+    openStatusFor = null;
   }
 
   async function handleNew() {
@@ -106,11 +108,37 @@
     return sortKey === key ? (sortAsc ? " ▲" : " ▼") : "";
   }
   function onWindowClick(e: MouseEvent) {
-    if (openMenu && !(e.target as Element).closest(".col-head")) openMenu = null;
+    const t = e.target as Element;
+    if (openMenu && !t.closest(".col-head")) openMenu = null;
+    if (openStatusFor && !t.closest(".status-dd")) openStatusFor = null;
   }
 </script>
 
 <svelte:window onclick={onWindowClick} />
+
+{#snippet statusControl(game: Game)}
+  <div class="status-dd">
+    <button
+      class="status-btn st-{game.status}"
+      onclick={() => (openStatusFor = openStatusFor === game.id ? null : game.id)}
+    >
+      {STATUS_LABELS[game.status]} ▾
+    </button>
+    {#if openStatusFor === game.id}
+      <div class="status-menu">
+        {#each STATUSES as s}
+          <button class="st-{s}" onclick={() => chooseStatus(game, s)}>{STATUS_LABELS[s]}</button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet storeBadges(game: Game)}
+  {#each Object.keys(game.sources) as src}
+    <span class="store-badge sb-{src}" title={src}>{src[0].toUpperCase()}</span>
+  {/each}
+{/snippet}
 
 <div class="app">
   <header>
@@ -178,16 +206,10 @@
                 />
               {/if}
             </div>
-            <div class="card-title" title={game.title}>{game.title}</div>
-            <select
-              class="status status-{game.status}"
-              value={game.status}
-              onchange={(e) => onStatusChange(game, e)}
-            >
-              {#each STATUSES as s}
-                <option value={s}>{STATUS_LABELS[s]}</option>
-              {/each}
-            </select>
+            <div class="card-title" title={game.title}>
+              {@render storeBadges(game)}{game.title}
+            </div>
+            {@render statusControl(game)}
           </div>
         {/each}
       </div>
@@ -299,7 +321,7 @@
         </thead>
         <tbody>
           {#each filtered as game (game.id)}
-            <tr>
+            <tr class="row-{game.status}">
               <td class="t-title">
                 <div class="title-cell">
                   <div class="cover">
@@ -315,17 +337,7 @@
                   <span>{game.title}</span>
                 </div>
               </td>
-              <td>
-                <select
-                  class="status status-{game.status}"
-                  value={game.status}
-                  onchange={(e) => onStatusChange(game, e)}
-                >
-                  {#each STATUSES as s}
-                    <option value={s}>{STATUS_LABELS[s]}</option>
-                  {/each}
-                </select>
-              </td>
+              <td>{@render statusControl(game)}</td>
               <td class="muted">{formatDate(game.statusChangedAt)}</td>
               <td class="muted">{formatPlaytime(game.playtimeMinutes)}</td>
               <td class="muted">{game.storeRating ?? "—"}</td>
@@ -576,22 +588,48 @@
   .card-cover img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
   }
   .card-title {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .card .status {
+  .card .status-dd,
+  .card .status-btn {
     width: 100%;
     box-sizing: border-box;
   }
+  .store-badge {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    line-height: 15px;
+    text-align: center;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    margin-right: 4px;
+    vertical-align: middle;
+    color: #fff;
+  }
+  .sb-steam {
+    background: #1b6dc1;
+  }
+  .sb-gog {
+    background: #7c3aed;
+  }
+  .sb-epic {
+    background: #555;
+  }
+  .sb-ign {
+    background: #c00;
+  }
   .t-title {
-    font-weight: 500;
+    font-weight: 700;
   }
   .title-cell {
     display: flex;
@@ -610,25 +648,106 @@
   .cover img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    /* contain, not cover: box art often embeds the title, which a crop slices */
+    object-fit: contain;
     display: block;
   }
   .muted {
     color: #8b909a;
   }
-  .status {
+  /* Custom status dropdown (replaces the native <select>, which mis-selected on
+     click near the viewport bottom and couldn't be colour-coded reliably). */
+  .status-dd {
+    position: relative;
+    display: inline-block;
+  }
+  .status-btn {
     background: #14161a;
-    color: #e6e6e6;
     border: 1px solid #3a3e48;
     border-radius: 6px;
-    padding: 4px 6px;
+    padding: 4px 8px;
     font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
   }
-  /* Make the opened dropdown list dark too (some platforms render the popup
-     with a white background and light text otherwise). */
-  .status option {
-    background: #14161a;
-    color: #e6e6e6;
+  .status-btn:hover {
+    border-color: #5865f2;
+  }
+  .status-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 10;
+    margin-top: 2px;
+    min-width: 130px;
+    background: #21242b;
+    border: 1px solid #3a3e48;
+    border-radius: 8px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  }
+  .status-menu button {
+    text-align: left;
+    background: none;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .status-menu button:hover {
+    background: #2c2f37;
+  }
+  /* Status colour coding (used by the dropdown trigger, menu items, row accent). */
+  .st-wishlist {
+    color: #c084fc;
+  }
+  .st-backlog {
+    color: #94a3b8;
+  }
+  .st-playing {
+    color: #4ade80;
+  }
+  .st-beat {
+    color: #60a5fa;
+  }
+  .st-quit {
+    color: #f87171;
+  }
+  .st-paused {
+    color: #fbbf24;
+  }
+  .st-free {
+    color: #2dd4bf;
+  }
+  tbody tr td:first-child {
+    border-left: 3px solid transparent;
+  }
+  .row-wishlist td:first-child {
+    border-left-color: #c084fc;
+  }
+  .row-backlog td:first-child {
+    border-left-color: #94a3b8;
+  }
+  .row-playing td:first-child {
+    border-left-color: #4ade80;
+  }
+  .row-beat td:first-child {
+    border-left-color: #60a5fa;
+  }
+  .row-quit td:first-child {
+    border-left-color: #f87171;
+  }
+  .row-paused td:first-child {
+    border-left-color: #fbbf24;
+  }
+  .row-free td:first-child {
+    border-left-color: #2dd4bf;
   }
   .sources .src {
     display: inline-block;
