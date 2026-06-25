@@ -9,6 +9,7 @@
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
+  import StoreIcon from "$lib/StoreIcon.svelte";
 
   type SortKey = "title" | "status" | "since" | "playtime" | "rating" | "metacritic";
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
@@ -16,6 +17,7 @@
   let search = $state("");
   let statusFilter = $state<Status | "all">("all");
   let viewMode = $state<"list" | "grid">("list");
+  let coverScale = $state(1);
   let sortKey = $state<SortKey>("title");
   let sortAsc = $state(true);
   let sourceFilter = $state(new Set<string>());
@@ -159,7 +161,7 @@
 
 {#snippet storeBadges(game: Game)}
   {#each Object.keys(game.sources) as src}
-    <span class="store-badge sb-{src}" title={src}>{src[0].toUpperCase()}</span>
+    <span class="store-badge" title={src}><StoreIcon store={src} size={13} /></span>
   {/each}
 {/snippet}
 
@@ -204,6 +206,17 @@
         </button>
       {/each}
     </div>
+    {#if viewMode === "list"}
+      <input
+        class="scale"
+        type="range"
+        min="0.6"
+        max="2.5"
+        step="0.1"
+        bind:value={coverScale}
+        title="Row image size"
+      />
+    {/if}
     <div class="view-toggle">
       <button class:active={viewMode === "list"} title="List view" onclick={() => (viewMode = "list")}>
         ☰
@@ -246,7 +259,7 @@
         {/each}
       </div>
     {:else}
-      <table>
+      <table style="--cover-scale: {coverScale}">
         <thead>
           <tr>
             <th>
@@ -379,7 +392,7 @@
               <td class="muted">{game.metacritic ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
-                  <span class="src">{src}</span>
+                  <span class="src-icon" title={src}><StoreIcon store={src} /></span>
                 {/each}
               </td>
             </tr>
@@ -507,6 +520,10 @@
   .count {
     opacity: 0.7;
     font-size: 11px;
+  }
+  .scale {
+    width: 90px;
+    accent-color: #5865f2;
   }
   .view-toggle {
     margin-left: auto;
@@ -654,29 +671,14 @@
     box-sizing: border-box;
   }
   .store-badge {
-    display: inline-block;
-    width: 15px;
-    height: 15px;
-    line-height: 15px;
-    text-align: center;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 700;
-    margin-right: 4px;
+    display: inline-flex;
     vertical-align: middle;
-    color: #fff;
+    margin-right: 5px;
   }
-  .sb-steam {
-    background: #1b6dc1;
-  }
-  .sb-gog {
-    background: #7c3aed;
-  }
-  .sb-epic {
-    background: #555;
-  }
-  .sb-ign {
-    background: #c00;
+  .src-icon {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-right: 5px;
   }
   .t-title {
     font-weight: 700;
@@ -715,8 +717,8 @@
   }
   .cover {
     flex: none;
-    width: 40px;
-    height: 56px;
+    width: calc(40px * var(--cover-scale, 1));
+    height: calc(56px * var(--cover-scale, 1));
     border-radius: 4px;
     background: #14161a;
     border: 1px solid #2c2f37;
@@ -825,15 +827,5 @@
   }
   .row-free td:first-child {
     border-left-color: #2dd4bf;
-  }
-  .sources .src {
-    display: inline-block;
-    background: #2c2f37;
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 11px;
-    color: #b9bdc7;
-    margin-right: 4px;
-    text-transform: capitalize;
   }
 </style>
