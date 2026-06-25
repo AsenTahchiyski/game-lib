@@ -3,8 +3,16 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { app, init, openLibrary, newLibrary, saveLibrary, setStatus } from "$lib/store.svelte";
-  import { STATUSES, STATUS_LABELS, TAGS, TAG_LABELS, type Status, type Game } from "$lib/types";
+  import {
+    app,
+    init,
+    openLibrary,
+    newLibrary,
+    saveLibrary,
+    setStatus,
+    availableTags,
+  } from "$lib/store.svelte";
+  import { STATUSES, STATUS_LABELS, TAG_LABELS, type Tag, type Status, type Game } from "$lib/types";
   import { formatPlaytime, formatDate, allkeyshopUrl } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
@@ -200,9 +208,9 @@
       {/each}
     </div>
     <div class="chips tag-chips">
-      {#each TAGS as t}
+      {#each availableTags() as t}
         <button class:active={tagFilter.has(t)} onclick={() => toggleTagFilter(t)}>
-          {TAG_LABELS[t]}
+          {TAG_LABELS[t as Tag] ?? t}
         </button>
       {/each}
     </div>

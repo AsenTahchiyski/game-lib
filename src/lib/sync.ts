@@ -215,7 +215,7 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
 
 // Fold `dup` into `target` — the same game arriving from another source or as a
 // different edition.
-function mergeDuplicate(target: Game, dup: Game): void {
+export function mergeDuplicate(target: Game, dup: Game): void {
   Object.assign(target.sources, dup.sources);
   // Keep the more meaningful status: one IGN carries (curated) and/or any
   // non-default status outranks a plain "backlog".

@@ -1,13 +1,25 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { confirm } from "@tauri-apps/plugin-dialog";
-  import { setStatus, removeGame, toggleTag, renameGame, setCover } from "./store.svelte";
+  import {
+    app,
+    setStatus,
+    removeGame,
+    toggleTag,
+    renameGame,
+    setCover,
+    availableTags,
+    addCustomTag,
+    deleteCustomTag,
+    mergeRecords,
+  } from "./store.svelte";
   import {
     STATUSES,
     STATUS_LABELS,
     TAGS,
     TAG_LABELS,
     type Status,
+    type Tag,
     type Game,
   } from "./types";
   import { formatPlaytime, formatDate, allkeyshopUrl } from "./format";
@@ -17,6 +29,30 @@
   let editingTitle = $state(false);
   let titleDraft = $state("");
   let coverDraft = $state("");
+  let newTag = $state("");
+  let mergeQuery = $state("");
+
+  const BUILTIN: string[] = TAGS;
+  const tagLabel = (t: string) => TAG_LABELS[t as Tag] ?? t;
+
+  const mergeCandidates = $derived(
+    mergeQuery.trim()
+      ? app.library.games
+          .filter(
+            (g) => g.id !== game.id && g.title.toLowerCase().includes(mergeQuery.toLowerCase()),
+          )
+          .slice(0, 8)
+      : [],
+  );
+
+  function createTag() {
+    addCustomTag(newTag, game);
+    newTag = "";
+  }
+  function doMerge(other: Game) {
+    mergeRecords(game, other);
+    mergeQuery = "";
+  }
   // Pre-fill / reset the cover draft from the current game (and when it changes).
   $effect(() => {
     coverDraft = game.coverUrl ?? "";
@@ -106,11 +142,20 @@
 
     <h3>Tags</h3>
     <div class="chips">
-      {#each TAGS as t}
-        <button class:active={(game.tags ?? []).includes(t)} onclick={() => toggleTag(game, t)}>
-          {TAG_LABELS[t]}
-        </button>
+      {#each availableTags() as t}
+        <span class="tag-wrap">
+          <button class:active={(game.tags ?? []).includes(t)} onclick={() => toggleTag(game, t)}>
+            {tagLabel(t)}
+          </button>
+          {#if !BUILTIN.includes(t)}
+            <button class="tag-del" title="Delete tag" onclick={() => deleteCustomTag(t)}>×</button>
+          {/if}
+        </span>
       {/each}
+    </div>
+    <div class="inline-add">
+      <input bind:value={newTag} placeholder="New tag…" onkeydown={(e) => e.key === "Enter" && createTag()} />
+      <button onclick={createTag} disabled={!newTag.trim()}>Add tag</button>
     </div>
 
     <h3>Cover image</h3>
@@ -124,6 +169,23 @@
       <button class="full" onclick={() => openUrl(allkeyshopUrl(game.title))}>
         Check PC Steam key prices on Allkeyshop ↗
       </button>
+    {/if}
+
+    <h3>Merge another record into this one</h3>
+    <div class="inline-add">
+      <input bind:value={mergeQuery} placeholder="Find a game by title…" />
+    </div>
+    {#if mergeCandidates.length > 0}
+      <ul class="merge-list">
+        {#each mergeCandidates as g}
+          <li>
+            <button onclick={() => doMerge(g)}>
+              {g.title}
+              <span class="muted">{Object.keys(g.sources).join(", ") || "manual"}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
     {/if}
 
     {#if datedHistory.length > 0}
@@ -303,6 +365,74 @@
   .chips button.active {
     border-color: currentColor;
     background: #14161a;
+  }
+  .tag-wrap {
+    display: inline-flex;
+    align-items: center;
+  }
+  .tag-del {
+    background: none;
+    border: none;
+    color: #8b909a;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px 0 4px;
+    margin-left: -2px;
+  }
+  .tag-del:hover {
+    color: #ffb4b4;
+  }
+  .inline-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .inline-add input {
+    flex: 1;
+    min-width: 0;
+    background: #14161a;
+    border: 1px solid #3a3e48;
+    border-radius: 7px;
+    padding: 7px 10px;
+    color: #e6e6e6;
+    font-size: 13px;
+  }
+  .inline-add button {
+    border: 1px solid #3a3e48;
+    background: #2c2f37;
+    color: #e6e6e6;
+    border-radius: 7px;
+    padding: 0 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .inline-add button:disabled {
+    opacity: 0.5;
+  }
+  .merge-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    border: 1px solid #3a3e48;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .merge-list button {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #2c2f37;
+    color: #e6e6e6;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .merge-list button:hover {
+    background: #2c2f37;
   }
   .history {
     margin: 0;

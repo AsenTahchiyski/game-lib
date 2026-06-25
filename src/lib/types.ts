@@ -79,6 +79,7 @@ export interface Library {
   version: number;
   updatedAt: string; // ISO-8601, used for last-write-wins across devices
   games: Game[];
+  customTags?: string[]; // user-created tags, in addition to the built-in TAGS
 }
 
 export interface Settings {

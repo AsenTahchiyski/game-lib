@@ -1,12 +1,21 @@
 // Reactive app state (Svelte 5 runes). The library lives here as the single
 // source of truth; Rust only does file IO and (later) store syncs.
-import { emptyLibrary, type Game, type Library, type Settings, type Status } from "./types";
+import {
+  emptyLibrary,
+  TAGS,
+  type Game,
+  type Library,
+  type Settings,
+  type Status,
+  type StoreId,
+} from "./types";
 import * as api from "./api";
 import {
   mergeSteamGames,
   mergeGogGames,
   mergeEpicGames,
   mergeIgnGames,
+  mergeDuplicate,
   dedupeLibrary,
   type MergeResult,
 } from "./sync";
@@ -20,6 +29,12 @@ export const app = $state({
   busy: false,
   error: null as string | null,
 });
+
+const BUILTIN_TAGS: string[] = TAGS;
+
+function steamCover(appid: number): string {
+  return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`;
+}
 
 function touch() {
   app.library.updatedAt = new Date().toISOString();
@@ -42,25 +57,80 @@ export function removeGame(game: Game) {
   touch();
 }
 
-/** Manually add a game straight to the Wishlist. Optionally attach a Steam app
- *  id so it gets a cover (and can be matched/enriched by a later Steam sync). */
-export function addManualGame(title: string, steamAppid?: number): Game {
+/** Manually add a game. Defaults to the Wishlist but the status is choosable;
+ *  optionally attach a store source (Steam also yields a cover). */
+export function addManualGame(opts: {
+  title: string;
+  status?: Status;
+  store?: StoreId;
+  storeId?: string;
+}): Game {
   const now = new Date().toISOString();
+  const status = opts.status ?? "wishlist";
+  const sources: Game["sources"] = {};
+  let coverUrl: string | undefined;
+  if (opts.store && opts.storeId) {
+    if (opts.store === "steam") {
+      const appid = parseInt(opts.storeId, 10);
+      if (Number.isFinite(appid) && appid > 0) {
+        sources.steam = { appid };
+        coverUrl = steamCover(appid);
+      }
+    } else {
+      sources[opts.store] = { id: opts.storeId };
+    }
+  }
   const game: Game = {
     id: crypto.randomUUID(),
-    title: title.trim(),
-    coverUrl: steamAppid
-      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppid}/library_600x900.jpg`
-      : undefined,
-    sources: steamAppid ? { steam: { appid: steamAppid } } : {},
-    status: "wishlist",
+    title: opts.title.trim(),
+    coverUrl,
+    sources,
+    status,
     statusChangedAt: now,
-    statusHistory: [{ status: "wishlist", at: now }],
+    statusHistory: [{ status, at: now }],
     addedAt: now,
   };
   app.library.games.push(game);
   touch();
   return game;
+}
+
+/** Merge `other` into `target` (manual de-dup) and drop `other`. */
+export function mergeRecords(target: Game, other: Game) {
+  if (target.id === other.id) return;
+  mergeDuplicate(target, other);
+  app.library.games = app.library.games.filter((g) => g.id !== other.id);
+  touch();
+}
+
+/** All tags available for use: built-ins plus the library's custom ones. */
+export function availableTags(): string[] {
+  return [...BUILTIN_TAGS, ...(app.library.customTags ?? [])];
+}
+
+/** Create a custom tag (and apply it to a game if given). */
+export function addCustomTag(name: string, game?: Game) {
+  const tag = name.trim().toLowerCase();
+  if (!tag) return;
+  const custom = app.library.customTags ?? [];
+  if (!BUILTIN_TAGS.includes(tag) && !custom.includes(tag)) {
+    app.library.customTags = [...custom, tag];
+  }
+  if (game) {
+    const tags = game.tags ?? [];
+    if (!tags.includes(tag)) game.tags = [...tags, tag];
+  }
+  touch();
+}
+
+/** Delete a custom tag and strip it from every game. Built-ins can't be removed. */
+export function deleteCustomTag(name: string) {
+  if (BUILTIN_TAGS.includes(name)) return;
+  app.library.customTags = (app.library.customTags ?? []).filter((t) => t !== name);
+  for (const g of app.library.games) {
+    if (g.tags?.includes(name)) g.tags = g.tags.filter((t) => t !== name);
+  }
+  touch();
 }
 
 /** Rename a game. */
