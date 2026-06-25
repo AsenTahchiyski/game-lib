@@ -436,7 +436,9 @@
     color-scheme: dark;
   }
   .app {
-    height: 100vh;
+    /* dvh (not vh) so the layout matches the *visible* viewport on Android,
+       which excludes the system status/navigation bars. */
+    height: 100dvh;
     display: flex;
     flex-direction: column;
   }
@@ -444,7 +446,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    /* Pad past the status bar / notch so the header isn't drawn under it
+       (env() insets are non-zero thanks to viewport-fit=cover). */
+    padding: calc(10px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+      10px calc(16px + env(safe-area-inset-left));
     border-bottom: 1px solid #2c2f37;
     background: #21242b;
   }
@@ -552,7 +557,9 @@
   main {
     flex: 1;
     overflow: auto;
-    padding: 0 16px 16px;
+    /* Keep the last row clear of the system navigation bar at the bottom. */
+    padding: 0 calc(16px + env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   }
   .empty {
     text-align: center;
