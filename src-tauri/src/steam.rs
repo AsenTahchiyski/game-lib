@@ -31,6 +31,92 @@ pub struct SteamGame {
     pub playtime_minutes: u64,
     pub metacritic: Option<u32>,   // 0-100, from the Steam store page
     pub store_rating: Option<u32>, // 0-100, Steam review % positive
+    pub wishlist: bool,            // true => from the wishlist, not owned
+}
+
+/// Appids on the user's Steam wishlist via the official IWishlistService. Public
+/// wishlist required; best-effort (empty on error/private).
+async fn fetch_wishlist_appids(client: &reqwest::Client, steam_id: &str) -> Vec<u32> {
+    let url = format!(
+        "https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid={steam_id}"
+    );
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let v: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    v.get("response")
+        .and_then(|r| r.get("items"))
+        .and_then(|i| i.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|it| it.get("appid").and_then(|a| a.as_u64()).map(|n| n as u32))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Name (and Metacritic) for an app from the store appdetails endpoint.
+async fn fetch_app_basic(client: &reqwest::Client, appid: u32) -> Option<(String, Option<u32>)> {
+    let url = format!(
+        "https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic,metacritic"
+    );
+    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    let data = v.get(appid.to_string().as_str())?.get("data")?;
+    let name = data.get("name")?.as_str()?.to_string();
+    let metacritic = data
+        .get("metacritic")
+        .and_then(|m| m.get("score"))
+        .and_then(|s| s.as_u64())
+        .map(|n| n as u32);
+    Some((name, metacritic))
+}
+
+/// Resolve wishlist appids into games (name + cover + Metacritic), skipping any
+/// the user already owns. Bounded concurrency, best-effort.
+async fn fetch_wishlist_games(
+    client: &reqwest::Client,
+    steam_id: &str,
+    owned: &std::collections::HashSet<u32>,
+) -> Vec<SteamGame> {
+    let appids: Vec<u32> = fetch_wishlist_appids(client, steam_id)
+        .await
+        .into_iter()
+        .filter(|a| !owned.contains(a))
+        .collect();
+
+    const CONCURRENCY: usize = 12;
+    let mut out = Vec::new();
+    let mut iter = appids.into_iter();
+    let mut set = tokio::task::JoinSet::new();
+    let spawn_next = |set: &mut tokio::task::JoinSet<(u32, Option<(String, Option<u32>)>)>,
+                      it: &mut std::vec::IntoIter<u32>| {
+        if let Some(id) = it.next() {
+            let c = client.clone();
+            set.spawn(async move { (id, fetch_app_basic(&c, id).await) });
+        }
+    };
+    for _ in 0..CONCURRENCY {
+        spawn_next(&mut set, &mut iter);
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok((appid, Some((name, metacritic)))) = res {
+            out.push(SteamGame {
+                appid,
+                name,
+                playtime_minutes: 0,
+                metacritic,
+                store_rating: None,
+                wishlist: true,
+            });
+        }
+        spawn_next(&mut set, &mut iter);
+    }
+    out
 }
 
 /// Metacritic score for an app from the store's appdetails endpoint. Best
@@ -145,6 +231,7 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             playtime_minutes: g.playtime_forever,
             metacritic: None,
             store_rating: None,
+            wishlist: false,
         })
         .collect();
 
@@ -157,6 +244,10 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             g.store_rating = *store_rating;
         }
     }
+
+    // Append wishlist games (best-effort; needs a public wishlist).
+    let owned: std::collections::HashSet<u32> = games.iter().map(|g| g.appid).collect();
+    games.extend(fetch_wishlist_games(&client, steam_id, &owned).await);
 
     Ok(games)
 }

@@ -69,6 +69,7 @@ export interface Game {
   storeRating?: number; // 0-100, the source store's own rating
   metacritic?: number; // 0-100
   tags?: string[]; // orthogonal labels, e.g. "coop", "casual"
+  userEdited?: boolean; // user changed status/title/etc — protect from sync overwrite
   addedAt: string; // ISO-8601
   lastSyncedAt?: string; // ISO-8601
 }
@@ -80,6 +81,7 @@ export interface Library {
   updatedAt: string; // ISO-8601, used for last-write-wins across devices
   games: Game[];
   customTags?: string[]; // user-created tags, in addition to the built-in TAGS
+  removed?: string[]; // tombstones ("steam:123", "title:<norm>") to skip on sync
 }
 
 export interface Settings {

@@ -23,6 +23,7 @@
     type Game,
   } from "./types";
   import { formatPlaytime, formatDate, allkeyshopUrl } from "./format";
+  import { coverFallback } from "./cover";
 
   let { game, onclose }: { game: Game; onclose: () => void } = $props();
 
@@ -92,7 +93,7 @@
           <img
             src={game.coverUrl}
             alt=""
-            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+            onerror={coverFallback}
           />
         {/if}
       </div>

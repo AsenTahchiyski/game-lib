@@ -14,6 +14,7 @@ export interface SteamGame {
   playtimeMinutes: number;
   metacritic?: number;
   storeRating?: number;
+  wishlist?: boolean;
 }
 
 export interface GogGame {
@@ -91,7 +92,7 @@ const ROMAN: Record<string, string> = {
  * trailing edition words. Conservative — it keeps "Portal" and "Portal 2"
  * distinct (numbers are preserved) and only converts unambiguous numerals.
  */
-function normalizeTitle(title: string): string {
+export function normalizeTitle(title: string): string {
   let s = title.toLowerCase();
   // Drop bracketed/parenthesized qualifiers, e.g. "[2014]", "(GOTY)". Targets the
   // disambiguation suffix without touching year-named games like "FIFA 2014".
@@ -156,7 +157,13 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
     if (norm && !byTitle.has(norm)) byTitle.set(norm, g);
   }
 
+  // Tombstones: games the user removed should not be re-added by a later sync.
+  const removed = new Set(library.removed ?? []);
+
   for (const ig of games) {
+    if (removed.has(`${store}:${ig.id}`) || removed.has(`title:${normalizeTitle(ig.title)}`)) {
+      continue;
+    }
     let existing = bySource.get(ig.id);
     if (!existing) {
       // Fall back to a title match against a game from a different source, but
@@ -176,7 +183,9 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         existing.storeRating = ig.storeRating;
       if (existing.metacritic === undefined && ig.metacritic !== undefined)
         existing.metacritic = ig.metacritic;
-      if (ig.status && existing.status !== ig.status) {
+      // Only the curated source (IGN) updates an existing status, and never
+      // over a status the user set themselves.
+      if (store === "ign" && ig.status && existing.status !== ig.status && !existing.userEdited) {
         existing.status = ig.status;
         existing.statusChangedAt = now;
         existing.statusHistory.push({ status: ig.status, at: now });
@@ -217,13 +226,15 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
 // different edition.
 export function mergeDuplicate(target: Game, dup: Game): void {
   Object.assign(target.sources, dup.sources);
-  // Keep the more meaningful status: one IGN carries (curated) and/or any
-  // non-default status outranks a plain "backlog".
-  const score = (g: Game) => (g.sources.ign ? 2 : 0) + (g.status !== "backlog" ? 1 : 0);
+  // Keep the most meaningful status: a user edit wins, then IGN's curated
+  // status, then any non-default over a plain "backlog".
+  const score = (g: Game) =>
+    (g.userEdited ? 4 : 0) + (g.sources.ign ? 2 : 0) + (g.status !== "backlog" ? 1 : 0);
   if (score(dup) > score(target)) {
     target.status = dup.status;
     target.statusChangedAt = dup.statusChangedAt;
   }
+  target.userEdited = target.userEdited || dup.userEdited;
   if (target.playtimeMinutes === undefined) {
     target.playtimeMinutes = dup.playtimeMinutes;
   } else if (dup.playtimeMinutes !== undefined) {
@@ -276,6 +287,8 @@ export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResu
       coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
       storeRating: g.storeRating,
       metacritic: g.metacritic,
+      // Wishlisted (not owned) items seed Wishlist status on creation only.
+      status: g.wishlist ? ("wishlist" as const) : undefined,
     })),
   );
 }

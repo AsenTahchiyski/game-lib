@@ -18,6 +18,7 @@
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
   import StoreIcon from "$lib/StoreIcon.svelte";
+  import { coverFallback } from "$lib/cover";
 
   type SortKey = "title" | "status" | "since" | "playtime" | "rating" | "metacritic";
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
@@ -255,7 +256,7 @@
                   src={game.coverUrl}
                   alt=""
                   loading="lazy"
-                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                  onerror={coverFallback}
                 />
               {/if}
             </button>
@@ -383,7 +384,7 @@
                         src={game.coverUrl}
                         alt=""
                         loading="lazy"
-                        onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                        onerror={coverFallback}
                       />
                     {/if}
                   </button>

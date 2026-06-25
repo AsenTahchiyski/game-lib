@@ -17,6 +17,7 @@ import {
   mergeIgnGames,
   mergeDuplicate,
   dedupeLibrary,
+  normalizeTitle,
   type MergeResult,
 } from "./sync";
 
@@ -48,11 +49,19 @@ export function setStatus(game: Game, status: Status) {
   game.status = status;
   game.statusChangedAt = at;
   game.statusHistory.push({ status, at });
+  game.userEdited = true;
   touch();
 }
 
-/** Remove a single game from the library. */
+/** Remove a single game. Records tombstones so a later sync won't re-add it. */
 export function removeGame(game: Game) {
+  const removed = new Set(app.library.removed ?? []);
+  if (game.sources.steam) removed.add(`steam:${game.sources.steam.appid}`);
+  if (game.sources.gog) removed.add(`gog:${game.sources.gog.id}`);
+  if (game.sources.epic) removed.add(`epic:${game.sources.epic.id}`);
+  if (game.sources.ign) removed.add(`ign:${game.sources.ign.id}`);
+  removed.add(`title:${normalizeTitle(game.title)}`);
+  app.library.removed = [...removed];
   app.library.games = app.library.games.filter((g) => g.id !== game.id);
   touch();
 }
@@ -88,6 +97,7 @@ export function addManualGame(opts: {
     status,
     statusChangedAt: now,
     statusHistory: [{ status, at: now }],
+    userEdited: true,
     addedAt: now,
   };
   app.library.games.push(game);
@@ -119,6 +129,7 @@ export function addCustomTag(name: string, game?: Game) {
   if (game) {
     const tags = game.tags ?? [];
     if (!tags.includes(tag)) game.tags = [...tags, tag];
+    game.userEdited = true;
   }
   touch();
 }
@@ -138,6 +149,7 @@ export function renameGame(game: Game, title: string) {
   const t = title.trim();
   if (!t || t === game.title) return;
   game.title = t;
+  game.userEdited = true;
   touch();
 }
 
@@ -145,6 +157,7 @@ export function renameGame(game: Game, title: string) {
 export function setCover(game: Game, url: string) {
   const u = url.trim();
   game.coverUrl = u || undefined;
+  game.userEdited = true;
   touch();
 }
 
@@ -152,6 +165,7 @@ export function setCover(game: Game, url: string) {
 export function toggleTag(game: Game, tag: string) {
   const tags = game.tags ?? [];
   game.tags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+  game.userEdited = true;
   touch();
 }
 
