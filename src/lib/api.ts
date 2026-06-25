@@ -1,6 +1,7 @@
 // Thin wrappers around Tauri commands and native dialogs.
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile, stat } from "@tauri-apps/plugin-fs";
 import type { Library, Settings } from "./types";
 import type { SteamGame, GogSyncResult, EpicSyncResult, IgnGame } from "./sync";
 
@@ -18,12 +19,31 @@ export async function pickSavePath(): Promise<string | null> {
   return result ?? null;
 }
 
-export const readLibrary = (path: string) => invoke<Library>("read_library", { path });
+// File IO lives in JS via plugin-fs (not a Rust command) because on Android the
+// dialog hands back a `content://` URI that std::fs can't open — plugin-fs
+// routes those through the platform's ContentResolver.
+
+export async function readLibrary(path: string): Promise<Library> {
+  const data = await readTextFile(path);
+  try {
+    return JSON.parse(data) as Library;
+  } catch (e) {
+    throw new Error(`Invalid library JSON in ${path}: ${e}`);
+  }
+}
 
 export const writeLibrary = (path: string, library: Library) =>
-  invoke<void>("write_library", { path, library });
+  writeTextFile(path, JSON.stringify(library, null, 2));
 
-export const fileMtime = (path: string) => invoke<number | null>("file_mtime", { path });
+export async function fileMtime(path: string): Promise<number | null> {
+  try {
+    const info = await stat(path);
+    return info.mtime ? info.mtime.getTime() : null;
+  } catch {
+    // File doesn't exist (or unreadable) — treat as "no copy on disk".
+    return null;
+  }
+}
 
 export const loadSettings = () => invoke<Settings>("load_settings");
 
