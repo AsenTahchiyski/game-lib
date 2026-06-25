@@ -63,6 +63,21 @@ export function addManualGame(title: string, steamAppid?: number): Game {
   return game;
 }
 
+/** Rename a game. */
+export function renameGame(game: Game, title: string) {
+  const t = title.trim();
+  if (!t || t === game.title) return;
+  game.title = t;
+  touch();
+}
+
+/** Set (or clear) a manual cover image URL for a game. */
+export function setCover(game: Game, url: string) {
+  const u = url.trim();
+  game.coverUrl = u || undefined;
+  touch();
+}
+
 /** Toggle an orthogonal tag (e.g. "coop", "casual") on a game. */
 export function toggleTag(game: Game, tag: string) {
   const tags = game.tags ?? [];
@@ -82,7 +97,15 @@ async function loadPath(path: string) {
   // Clean up any duplicates from before edition-aware matching existed; if it
   // changed anything, leave the library marked dirty so the user can save it.
   const removed = dedupeLibrary(app.library);
-  app.dirty = removed > 0;
+  // Drop import-artifact history entries (older imports stamped a bogus
+  // "<status> @ import date"). Such an entry has at === addedAt.
+  let cleaned = 0;
+  for (const g of app.library.games) {
+    const before = g.statusHistory.length;
+    g.statusHistory = g.statusHistory.filter((e) => e.at !== g.addedAt);
+    cleaned += before - g.statusHistory.length;
+  }
+  app.dirty = removed > 0 || cleaned > 0;
   if (app.settings.lastLibraryPath !== path) {
     app.settings.lastLibraryPath = path;
     await persistSettings();

@@ -7,6 +7,16 @@ export function formatPlaytime(minutes: number | undefined): string {
   return `${h}h ${m}m`;
 }
 
+/** Allkeyshop "buy / compare prices" deep link for a game title. */
+export function allkeyshopUrl(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `https://www.allkeyshop.com/blog/buy-${slug}-cd-key-compare-prices/`;
+}
+
 export function formatDate(iso: string | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

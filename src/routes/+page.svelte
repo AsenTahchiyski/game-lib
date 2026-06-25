@@ -5,7 +5,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { app, init, openLibrary, newLibrary, saveLibrary, setStatus } from "$lib/store.svelte";
   import { STATUSES, STATUS_LABELS, TAGS, TAG_LABELS, type Status, type Game } from "$lib/types";
-  import { formatPlaytime, formatDate } from "$lib/format";
+  import { formatPlaytime, formatDate, allkeyshopUrl } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
@@ -95,7 +95,7 @@
   }
 
   function openAllkeyshop(game: Game) {
-    openUrl(`https://www.allkeyshop.com/blog/?s=${encodeURIComponent(game.title)}`);
+    openUrl(allkeyshopUrl(game.title));
   }
 
   async function handleNew() {

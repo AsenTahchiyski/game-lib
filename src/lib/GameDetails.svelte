@@ -1,7 +1,7 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { confirm } from "@tauri-apps/plugin-dialog";
-  import { setStatus, removeGame, toggleTag } from "./store.svelte";
+  import { setStatus, removeGame, toggleTag, renameGame, setCover } from "./store.svelte";
   import {
     STATUSES,
     STATUS_LABELS,
@@ -10,13 +10,29 @@
     type Status,
     type Game,
   } from "./types";
-  import { formatPlaytime, formatDate } from "./format";
+  import { formatPlaytime, formatDate, allkeyshopUrl } from "./format";
 
   let { game, onclose }: { game: Game; onclose: () => void } = $props();
 
-  const allkeyshopUrl = $derived(
-    `https://www.allkeyshop.com/blog/?s=${encodeURIComponent(game.title)}`,
-  );
+  let editingTitle = $state(false);
+  let titleDraft = $state("");
+  let coverDraft = $state("");
+  // Pre-fill / reset the cover draft from the current game (and when it changes).
+  $effect(() => {
+    coverDraft = game.coverUrl ?? "";
+  });
+
+  // Only history entries with a real recorded date — import artifacts are dropped.
+  const datedHistory = $derived(game.statusHistory.filter((e) => !!e.at));
+
+  function startRename() {
+    titleDraft = game.title;
+    editingTitle = true;
+  }
+  function commitRename() {
+    renameGame(game, titleDraft);
+    editingTitle = false;
+  }
 
   async function handleRemove() {
     const ok = await confirm(`Remove "${game.title}" from your library?`, {
@@ -45,7 +61,22 @@
         {/if}
       </div>
       <div class="head-info">
-        <h2>{game.title}</h2>
+        {#if editingTitle}
+          <input
+            class="title-edit"
+            bind:value={titleDraft}
+            onkeydown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") editingTitle = false;
+            }}
+          />
+          <div class="title-actions">
+            <button class="primary" onclick={commitRename}>Save</button>
+            <button onclick={() => (editingTitle = false)}>Cancel</button>
+          </div>
+        {:else}
+          <h2>{game.title} <button class="edit" title="Rename" onclick={startRename}>✎</button></h2>
+        {/if}
         <div class="sources">
           {#each Object.keys(game.sources) as src}
             <span class="src">{src}</span>
@@ -82,17 +113,23 @@
       {/each}
     </div>
 
+    <h3>Cover image</h3>
+    <div class="cover-edit">
+      <input bind:value={coverDraft} placeholder="Paste an image URL…" />
+      <button onclick={() => setCover(game, coverDraft)}>Set</button>
+    </div>
+
     {#if game.status === "wishlist"}
       <h3>Wishlist</h3>
-      <button class="full" onclick={() => openUrl(allkeyshopUrl)}>
+      <button class="full" onclick={() => openUrl(allkeyshopUrl(game.title))}>
         Check PC Steam key prices on Allkeyshop ↗
       </button>
     {/if}
 
-    {#if game.statusHistory.length > 0}
+    {#if datedHistory.length > 0}
       <h3>History</h3>
       <ul class="history">
-        {#each game.statusHistory as e}
+        {#each datedHistory as e}
           <li><span class="st-{e.status}">{STATUS_LABELS[e.status as Status] ?? e.status}</span>
             <span class="muted">{formatDate(e.at)}</span></li>
         {/each}
@@ -120,20 +157,20 @@
     background: #21242b;
     border: 1px solid #3a3e48;
     border-radius: 12px;
-    padding: 22px;
-    width: 480px;
-    max-width: 92vw;
-    max-height: 88vh;
+    padding: 26px;
+    width: 680px;
+    max-width: 94vw;
+    max-height: 90vh;
     overflow-y: auto;
   }
   .head {
     display: flex;
-    gap: 16px;
+    gap: 20px;
   }
   .cover {
     flex: none;
-    width: 96px;
-    height: 134px;
+    width: 150px;
+    height: 210px;
     border-radius: 6px;
     background: #14161a;
     border: 1px solid #2c2f37;
@@ -150,7 +187,68 @@
   }
   h2 {
     margin: 0 0 8px;
+    font-size: 20px;
+  }
+  .edit {
+    background: none;
+    border: none;
+    color: #8b909a;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .edit:hover {
+    color: #e6e6e6;
+  }
+  .title-edit {
+    width: 100%;
+    box-sizing: border-box;
+    background: #14161a;
+    border: 1px solid #3a3e48;
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: #e6e6e6;
     font-size: 18px;
+  }
+  .title-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .title-actions button {
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    border: 1px solid #3a3e48;
+    background: #2c2f37;
+    color: #e6e6e6;
+  }
+  .title-actions .primary {
+    background: #5865f2;
+    border-color: #5865f2;
+    color: #fff;
+  }
+  .cover-edit {
+    display: flex;
+    gap: 8px;
+  }
+  .cover-edit input {
+    flex: 1;
+    min-width: 0;
+    background: #14161a;
+    border: 1px solid #3a3e48;
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: #e6e6e6;
+    font-size: 13px;
+  }
+  .cover-edit button {
+    border: 1px solid #3a3e48;
+    background: #2c2f37;
+    color: #e6e6e6;
+    border-radius: 7px;
+    padding: 0 14px;
+    font-size: 13px;
+    cursor: pointer;
   }
   h3 {
     margin: 18px 0 8px;
@@ -176,10 +274,12 @@
   .stats div {
     display: flex;
     justify-content: space-between;
+    gap: 16px;
     font-size: 13px;
   }
   .stats dt {
     color: #8b909a;
+    white-space: nowrap;
   }
   .stats dd {
     margin: 0;
