@@ -20,7 +20,7 @@
   import StoreIcon from "$lib/StoreIcon.svelte";
   import { coverFallback } from "$lib/cover";
 
-  type SortKey = "title" | "status" | "since" | "playtime" | "rating" | "metacritic";
+  type SortKey = "title" | "status" | "since" | "playtime" | "rating";
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
 
   let search = $state("");
@@ -55,8 +55,6 @@
         return (a.playtimeMinutes ?? -1) - (b.playtimeMinutes ?? -1);
       case "rating":
         return (a.storeRating ?? -1) - (b.storeRating ?? -1);
-      case "metacritic":
-        return (a.metacritic ?? -1) - (b.metacritic ?? -1);
     }
   }
 
@@ -336,19 +334,6 @@
                 {/if}
               </div>
             </th>
-            <th class="opt">
-              <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("metacritic")}>
-                  Metacritic{sortArrow("metacritic")} ▾
-                </button>
-                {#if openMenu === "metacritic"}
-                  <div class="menu">
-                    <button onclick={() => setSort("metacritic", false)}>Highest first</button>
-                    <button onclick={() => setSort("metacritic", true)}>Lowest first</button>
-                  </div>
-                {/if}
-              </div>
-            </th>
             <th>
               <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("sources")}>
@@ -397,7 +382,6 @@
               <td class="muted opt">{formatDate(game.statusChangedAt)}</td>
               <td class="muted opt">{formatPlaytime(game.playtimeMinutes)}</td>
               <td class="muted opt">{game.storeRating ?? "—"}</td>
-              <td class="muted opt">{game.metacritic ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
                   <span class="src-icon" title={src}><StoreIcon store={src} /></span>
