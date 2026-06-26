@@ -179,9 +179,8 @@
     <div class="title">
       <strong>Game Library</strong>
       {#if version}<span class="ver">v{version}</span>{/if}
-      <span class="path">
-        {app.currentPath ?? "No file"}{app.dirty ? " •" : ""}
-      </span>
+      {#if app.dirty}<span class="dirty" title="Unsaved changes">•</span>{/if}
+      <span class="path">{app.currentPath ?? "No file"}</span>
     </div>
     <div class="actions">
       <button onclick={handleNew}>New</button>
@@ -300,7 +299,7 @@
                 {/if}
               </div>
             </th>
-            <th>
+            <th class="opt">
               <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("since")}>Since{sortArrow("since")} ▾</button>
                 {#if openMenu === "since"}
@@ -311,7 +310,7 @@
                 {/if}
               </div>
             </th>
-            <th>
+            <th class="opt">
               <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("playtime")}>
                   Playtime{sortArrow("playtime")} ▾
@@ -324,7 +323,7 @@
                 {/if}
               </div>
             </th>
-            <th>
+            <th class="opt">
               <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("rating")}>
                   Rating{sortArrow("rating")} ▾
@@ -337,7 +336,7 @@
                 {/if}
               </div>
             </th>
-            <th>
+            <th class="opt">
               <div class="col-head">
                 <button class="hbtn" onclick={() => toggleMenu("metacritic")}>
                   Metacritic{sortArrow("metacritic")} ▾
@@ -395,10 +394,10 @@
                 </div>
               </td>
               <td>{@render statusControl(game)}</td>
-              <td class="muted">{formatDate(game.statusChangedAt)}</td>
-              <td class="muted">{formatPlaytime(game.playtimeMinutes)}</td>
-              <td class="muted">{game.storeRating ?? "—"}</td>
-              <td class="muted">{game.metacritic ?? "—"}</td>
+              <td class="muted opt">{formatDate(game.statusChangedAt)}</td>
+              <td class="muted opt">{formatPlaytime(game.playtimeMinutes)}</td>
+              <td class="muted opt">{game.storeRating ?? "—"}</td>
+              <td class="muted opt">{game.metacritic ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
                   <span class="src-icon" title={src}><StoreIcon store={src} /></span>
@@ -453,22 +452,42 @@
     border-bottom: 1px solid #2c2f37;
     background: #21242b;
   }
+  .title {
+    display: flex;
+    align-items: baseline;
+    /* Let the title shrink and the path ellipsis instead of shoving the
+       action buttons off the right edge. */
+    min-width: 0;
+    flex: 1;
+  }
   .title strong {
     font-size: 15px;
+    flex: none;
   }
   .ver {
     margin-left: 6px;
     font-size: 11px;
     color: #6b7280;
+    flex: none;
+  }
+  .dirty {
+    margin-left: 6px;
+    color: #5865f2;
+    flex: none;
   }
   .path {
     margin-left: 10px;
     font-size: 12px;
     color: #8b909a;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .actions {
     display: flex;
     gap: 8px;
+    flex: none;
   }
   button {
     background: #2c2f37;
@@ -843,5 +862,23 @@
   }
   .row-free td:first-child {
     border-left-color: #2dd4bf;
+  }
+
+  /* Narrow screens (phones / the Android app): drop secondary columns and the
+     file-path clutter so the core Title / Status / Sources list fits. */
+  @media (max-width: 640px) {
+    header {
+      flex-wrap: wrap;
+    }
+    .actions {
+      flex-wrap: wrap;
+    }
+    .path,
+    .ver {
+      display: none;
+    }
+    .opt {
+      display: none;
+    }
   }
 </style>

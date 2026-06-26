@@ -504,4 +504,26 @@
   .st-free {
     color: #2dd4bf;
   }
+
+  /* Narrow screens (phones / the Android app): tighten padding, shrink the
+     cover, and stack the stats so the header doesn't overflow. */
+  @media (max-width: 560px) {
+    .modal {
+      padding: 16px;
+      max-width: 96vw;
+    }
+    .head {
+      gap: 14px;
+    }
+    .cover {
+      width: 96px;
+      height: 134px;
+    }
+    h2 {
+      font-size: 17px;
+    }
+    .stats {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
