@@ -72,7 +72,7 @@ jobs:
         run: |
           gh release view latest-desktop --repo "$GITHUB_REPOSITORY" \
             --json assets -q '.assets[].name' 2>/dev/null \
-          | grep -Ei '\.(AppImage|deb)$' \
+          | { grep -Ei '\.(AppImage|deb)$' || true; } \
           | while read -r name; do
               [ -n "$name" ] && gh release delete-asset latest-desktop "$name" \
                 --repo "$GITHUB_REPOSITORY" -y || true
@@ -86,7 +86,7 @@ jobs:
         run: |
           gh release view latest-desktop --repo "$GITHUB_REPOSITORY" \
             --json assets -q '.assets[].name' 2>/dev/null \
-          | grep -Ei '\.(msi|exe)$' \
+          | { grep -Ei '\.(msi|exe)$' || true; } \
           | while read -r name; do
               [ -n "$name" ] && gh release delete-asset latest-desktop "$name" \
                 --repo "$GITHUB_REPOSITORY" -y || true
