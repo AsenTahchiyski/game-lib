@@ -14,6 +14,7 @@ export interface SteamGame {
   playtimeMinutes: number;
   metacritic?: number;
   storeRating?: number;
+  releaseTimestamp?: number; // unix seconds
   wishlist?: boolean;
 }
 
@@ -61,6 +62,7 @@ interface Incoming {
   coverUrl?: string; // box art, where the source provides one
   storeRating?: number; // the source store's own rating, 0-100
   metacritic?: number; // 0-100
+  releaseDate?: string; // ISO date (yyyy-mm-dd)
 }
 
 // Edition/version qualifiers that one store appends but another doesn't, e.g.
@@ -183,6 +185,8 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         existing.storeRating = ig.storeRating;
       if (existing.metacritic === undefined && ig.metacritic !== undefined)
         existing.metacritic = ig.metacritic;
+      // The store is authoritative for the release date, so update it freely.
+      if (ig.releaseDate) existing.releaseDate = ig.releaseDate;
       // Only the curated source (IGN) updates an existing status, and never
       // over a status the user set themselves.
       if (store === "ign" && ig.status && existing.status !== ig.status && !existing.userEdited) {
@@ -207,6 +211,7 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         playtimeMinutes: ig.playtimeMinutes,
         storeRating: ig.storeRating,
         metacritic: ig.metacritic,
+        releaseDate: ig.releaseDate,
         addedAt: now,
         lastSyncedAt: now,
       };
@@ -243,6 +248,7 @@ export function mergeDuplicate(target: Game, dup: Game): void {
   if (!target.coverUrl) target.coverUrl = dup.coverUrl;
   if (target.storeRating === undefined) target.storeRating = dup.storeRating;
   if (target.metacritic === undefined) target.metacritic = dup.metacritic;
+  if (target.releaseDate === undefined) target.releaseDate = dup.releaseDate;
   target.statusHistory = [...target.statusHistory, ...dup.statusHistory];
   if (dup.addedAt < target.addedAt) target.addedAt = dup.addedAt;
   if (dup.lastSyncedAt && (!target.lastSyncedAt || dup.lastSyncedAt > target.lastSyncedAt)) {
@@ -287,6 +293,9 @@ export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResu
       coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
       storeRating: g.storeRating,
       metacritic: g.metacritic,
+      releaseDate: g.releaseTimestamp
+        ? new Date(g.releaseTimestamp * 1000).toISOString().slice(0, 10)
+        : undefined,
       // Wishlisted (not owned) items seed Wishlist status on creation only.
       status: g.wishlist ? ("wishlist" as const) : undefined,
     })),

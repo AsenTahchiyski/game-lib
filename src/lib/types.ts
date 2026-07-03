@@ -68,6 +68,7 @@ export interface Game {
   playtimeMinutes?: number; // undefined = unknown (most sources don't expose it)
   storeRating?: number; // 0-100, the source store's own rating
   metacritic?: number; // 0-100
+  releaseDate?: string; // ISO-8601 date (yyyy-mm-dd); undefined = unknown
   tags?: string[]; // orthogonal labels, e.g. "coop", "casual"
   userEdited?: boolean; // user changed status/title/etc — protect from sync overwrite
   addedAt: string; // ISO-8601

@@ -31,6 +31,7 @@ pub struct SteamGame {
     pub playtime_minutes: u64,
     pub metacritic: Option<u32>,   // 0-100, from the Steam store page
     pub store_rating: Option<u32>, // 0-100, Steam review % positive
+    pub release_timestamp: Option<i64>, // unix seconds; the frontend turns it into a date
     pub wishlist: bool,            // true => from the wishlist, not owned
 }
 
@@ -60,61 +61,65 @@ async fn fetch_wishlist_appids(client: &reqwest::Client, steam_id: &str) -> Vec<
         .unwrap_or_default()
 }
 
-/// Name (and Metacritic) for an app from the store appdetails endpoint.
-async fn fetch_app_basic(client: &reqwest::Client, appid: u32) -> Option<(String, Option<u32>)> {
-    let url = format!(
-        "https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic,metacritic"
-    );
-    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
-    let data = v.get(appid.to_string().as_str())?.get("data")?;
-    let name = data.get("name")?.as_str()?.to_string();
-    let metacritic = data
-        .get("metacritic")
-        .and_then(|m| m.get("score"))
-        .and_then(|s| s.as_u64())
-        .map(|n| n as u32);
-    Some((name, metacritic))
+/// Per-app info from the bulk store catalog endpoint.
+struct StoreItem {
+    name: Option<String>,
+    percent_positive: Option<u32>,
+    release_timestamp: Option<i64>,
 }
 
-/// Resolve wishlist appids into games (name + cover + Metacritic), skipping any
-/// the user already owns. Bounded concurrency, best-effort.
-async fn fetch_wishlist_games(
+/// Names, review % and release dates via IStoreBrowseService/GetItems — one
+/// request per 200 apps instead of one per app, so wishlist entries aren't
+/// dropped by store rate limits. Best-effort: failed chunks are just skipped.
+async fn fetch_store_items(
     client: &reqwest::Client,
-    steam_id: &str,
-    owned: &std::collections::HashSet<u32>,
-) -> Vec<SteamGame> {
-    let appids: Vec<u32> = fetch_wishlist_appids(client, steam_id)
-        .await
-        .into_iter()
-        .filter(|a| !owned.contains(a))
-        .collect();
-
-    const CONCURRENCY: usize = 12;
-    let mut out = Vec::new();
-    let mut iter = appids.into_iter();
-    let mut set = tokio::task::JoinSet::new();
-    let spawn_next = |set: &mut tokio::task::JoinSet<(u32, Option<(String, Option<u32>)>)>,
-                      it: &mut std::vec::IntoIter<u32>| {
-        if let Some(id) = it.next() {
-            let c = client.clone();
-            set.spawn(async move { (id, fetch_app_basic(&c, id).await) });
-        }
-    };
-    for _ in 0..CONCURRENCY {
-        spawn_next(&mut set, &mut iter);
-    }
-    while let Some(res) = set.join_next().await {
-        if let Ok((appid, Some((name, metacritic)))) = res {
-            out.push(SteamGame {
+    appids: &[u32],
+) -> std::collections::HashMap<u32, StoreItem> {
+    let mut out = std::collections::HashMap::new();
+    for chunk in appids.chunks(200) {
+        let ids: Vec<serde_json::Value> =
+            chunk.iter().map(|a| serde_json::json!({ "appid": a })).collect();
+        let input = serde_json::json!({
+            "ids": ids,
+            "context": { "language": "english", "country_code": "US", "steam_realm": 1 },
+            "data_request": { "include_release": true, "include_reviews": true },
+        });
+        let resp = match client
+            .get("https://api.steampowered.com/IStoreBrowseService/GetItems/v1/")
+            .query(&[("input_json", input.to_string())])
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let v: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let Some(items) = v.pointer("/response/store_items").and_then(|i| i.as_array()) else {
+            continue;
+        };
+        for it in items {
+            let Some(appid) = it.get("appid").and_then(|a| a.as_u64()).map(|n| n as u32) else {
+                continue;
+            };
+            out.insert(
                 appid,
-                name,
-                playtime_minutes: 0,
-                metacritic,
-                store_rating: None,
-                wishlist: true,
-            });
+                StoreItem {
+                    name: it.get("name").and_then(|n| n.as_str()).map(String::from),
+                    percent_positive: it
+                        .pointer("/reviews/summary_filtered/percent_positive")
+                        .and_then(|p| p.as_u64())
+                        .map(|n| n as u32),
+                    // 0 means TBA/unreleased — treat as unknown.
+                    release_timestamp: it
+                        .pointer("/release/steam_release_date")
+                        .and_then(|t| t.as_i64())
+                        .filter(|&t| t > 0),
+                },
+            );
         }
-        spawn_next(&mut set, &mut iter);
     }
     out
 }
@@ -134,41 +139,23 @@ async fn fetch_metacritic(client: &reqwest::Client, appid: u32) -> Option<u32> {
         .map(|n| n as u32)
 }
 
-/// Steam's own rating (% positive reviews) from the appreviews endpoint.
-async fn fetch_store_rating(client: &reqwest::Client, appid: u32) -> Option<u32> {
-    let url = format!(
-        "https://store.steampowered.com/appreviews/{appid}\
-         ?json=1&language=all&num_per_page=0&purchase_type=all"
-    );
-    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
-    let q = v.get("query_summary")?;
-    let positive = q.get("total_positive")?.as_u64()?;
-    let total = q.get("total_reviews")?.as_u64()?;
-    if total == 0 {
-        return None;
-    }
-    Some(((positive as f64 / total as f64) * 100.0).round() as u32)
-}
-
-/// Fetch Metacritic + Steam review ratings for many appids with bounded
-/// concurrency. Failures are swallowed (the game just gets no rating), and the
-/// Steam store endpoints are rate-limited, so coverage may be partial.
-async fn fetch_ratings(
+/// Fetch Metacritic scores for many appids with bounded concurrency. Failures
+/// are swallowed (the game just gets no score), and the appdetails endpoint is
+/// rate-limited, so coverage may be partial.
+async fn fetch_metacritics(
     client: &reqwest::Client,
     appids: Vec<u32>,
-) -> std::collections::HashMap<u32, (Option<u32>, Option<u32>)> {
+) -> std::collections::HashMap<u32, Option<u32>> {
     const CONCURRENCY: usize = 12;
     let mut out = std::collections::HashMap::new();
     let mut iter = appids.into_iter();
     let mut set = tokio::task::JoinSet::new();
 
-    let spawn_next = |set: &mut tokio::task::JoinSet<(u32, (Option<u32>, Option<u32>))>,
+    let spawn_next = |set: &mut tokio::task::JoinSet<(u32, Option<u32>)>,
                       it: &mut std::vec::IntoIter<u32>| {
         if let Some(id) = it.next() {
             let c = client.clone();
-            set.spawn(async move {
-                (id, (fetch_metacritic(&c, id).await, fetch_store_rating(&c, id).await))
-            });
+            set.spawn(async move { (id, fetch_metacritic(&c, id).await) });
         }
     };
 
@@ -176,8 +163,8 @@ async fn fetch_ratings(
         spawn_next(&mut set, &mut iter);
     }
     while let Some(res) = set.join_next().await {
-        if let Ok((id, ratings)) = res {
-            out.insert(id, ratings);
+        if let Ok((id, score)) = res {
+            out.insert(id, score);
         }
         spawn_next(&mut set, &mut iter);
     }
@@ -231,23 +218,55 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             playtime_minutes: g.playtime_forever,
             metacritic: None,
             store_rating: None,
+            release_timestamp: None,
             wishlist: false,
         })
         .collect();
 
-    // Enrich with ratings (best-effort; partial on rate limits).
+    // Wishlist appids (best-effort; needs a public wishlist), minus owned.
     let client = reqwest::Client::new();
-    let ratings = fetch_ratings(&client, games.iter().map(|g| g.appid).collect()).await;
+    let owned: std::collections::HashSet<u32> = games.iter().map(|g| g.appid).collect();
+    let wishlist: Vec<u32> = fetch_wishlist_appids(&client, steam_id)
+        .await
+        .into_iter()
+        .filter(|a| !owned.contains(a))
+        .collect();
+
+    // One bulk store lookup for everything: review % + release date for owned
+    // games, plus the names for wishlist entries.
+    let all_ids: Vec<u32> = games
+        .iter()
+        .map(|g| g.appid)
+        .chain(wishlist.iter().copied())
+        .collect();
+    let items = fetch_store_items(&client, &all_ids).await;
     for g in &mut games {
-        if let Some((metacritic, store_rating)) = ratings.get(&g.appid) {
-            g.metacritic = *metacritic;
-            g.store_rating = *store_rating;
+        if let Some(it) = items.get(&g.appid) {
+            g.store_rating = it.percent_positive;
+            g.release_timestamp = it.release_timestamp;
         }
     }
+    for appid in wishlist {
+        let it = items.get(&appid);
+        games.push(SteamGame {
+            appid,
+            // Empty name => the frontend labels it "Steam app <id>". Still
+            // better than silently dropping the wishlist entry.
+            name: it.and_then(|i| i.name.clone()).unwrap_or_default(),
+            playtime_minutes: 0,
+            metacritic: None,
+            store_rating: it.and_then(|i| i.percent_positive),
+            release_timestamp: it.and_then(|i| i.release_timestamp),
+            wishlist: true,
+        });
+    }
 
-    // Append wishlist games (best-effort; needs a public wishlist).
-    let owned: std::collections::HashSet<u32> = games.iter().map(|g| g.appid).collect();
-    games.extend(fetch_wishlist_games(&client, steam_id, &owned).await);
+    // Metacritic still needs the per-app appdetails endpoint (best-effort;
+    // partial on rate limits).
+    let metas = fetch_metacritics(&client, games.iter().map(|g| g.appid).collect()).await;
+    for g in &mut games {
+        g.metacritic = metas.get(&g.appid).copied().flatten();
+    }
 
     Ok(games)
 }
