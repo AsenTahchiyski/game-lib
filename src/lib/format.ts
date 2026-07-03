@@ -1,3 +1,5 @@
+import type { Game, StoreId } from "./types";
+
 export function formatPlaytime(minutes: number | undefined): string {
   if (!minutes) return "—";
   const h = Math.floor(minutes / 60);
@@ -15,6 +17,48 @@ export function allkeyshopUrl(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `https://www.allkeyshop.com/blog/buy-${slug}-cd-key-compare-prices/`;
+}
+
+export interface StoreLink {
+  store: StoreId;
+  label: string;
+  url: string;
+}
+
+/**
+ * Store-page links for a game, one per source it came from. Steam has a direct
+ * app URL; GOG/Epic don't expose a page URL in their sync data, so those go to
+ * a store search for the title. Wishlisted games always get a Steam link (the
+ * store the user buys PC keys for), falling back to a Steam search when the
+ * game isn't wishlisted on Steam itself.
+ */
+export function storeLinks(game: Game): StoreLink[] {
+  const links: StoreLink[] = [];
+  const q = encodeURIComponent(game.title);
+  if (game.sources.steam) {
+    links.push({
+      store: "steam",
+      label: "Steam",
+      url: `https://store.steampowered.com/app/${game.sources.steam.appid}/`,
+    });
+  } else if (game.status === "wishlist") {
+    links.push({
+      store: "steam",
+      label: "Find on Steam",
+      url: `https://store.steampowered.com/search/?term=${q}`,
+    });
+  }
+  if (game.sources.gog) {
+    links.push({ store: "gog", label: "GOG", url: `https://www.gog.com/en/games?query=${q}` });
+  }
+  if (game.sources.epic) {
+    links.push({
+      store: "epic",
+      label: "Epic",
+      url: `https://store.epicgames.com/en-US/browse?q=${q}&sortBy=relevancy`,
+    });
+  }
+  return links;
 }
 
 export function formatDate(iso: string | undefined): string {

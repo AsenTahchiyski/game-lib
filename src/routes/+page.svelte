@@ -18,9 +18,18 @@
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
   import StoreIcon from "$lib/StoreIcon.svelte";
+  import RatingIcon from "$lib/RatingIcon.svelte";
   import { coverFallback } from "$lib/cover";
 
-  type SortKey = "title" | "status" | "since" | "playtime" | "rating";
+  type SortKey = "title" | "status" | "since" | "playtime" | "released" | "rating";
+  const SORT_LABELS: Record<SortKey, string> = {
+    title: "Title",
+    status: "Status",
+    since: "Since",
+    playtime: "Playtime",
+    released: "Released",
+    rating: "Rating",
+  };
   const SOURCE_IDS = ["steam", "gog", "epic", "ign"] as const;
 
   let search = $state("");
@@ -53,6 +62,8 @@
         return (Date.parse(a.statusChangedAt ?? "") || 0) - (Date.parse(b.statusChangedAt ?? "") || 0);
       case "playtime":
         return (a.playtimeMinutes ?? -1) - (b.playtimeMinutes ?? -1);
+      case "released":
+        return (Date.parse(a.releaseDate ?? "") || 0) - (Date.parse(b.releaseDate ?? "") || 0);
       case "rating":
         return (a.storeRating ?? -1) - (b.storeRating ?? -1);
     }
@@ -136,8 +147,10 @@
     else next.add(s);
     sourceFilter = next;
   }
-  function sortArrow(key: SortKey): string {
-    return sortKey === key ? (sortAsc ? " ▲" : " ▼") : "";
+  // The active sort column shows only its direction triangle (and is bolded
+  // via .sorted); inactive columns show the menu caret.
+  function headArrow(key: SortKey): string {
+    return sortKey === key ? (sortAsc ? " ▲" : " ▼") : " ▾";
   }
   function onWindowClick(e: MouseEvent) {
     const t = e.target as Element;
@@ -222,6 +235,20 @@
         bind:value={coverScale}
         title="Row image size"
       />
+    {:else}
+      <!-- The list view sorts via its column headers; the grid has no headers,
+           so it gets an explicit sort control. -->
+      <div class="sort-ctl">
+        <span class="sort-label">Sort</span>
+        <select bind:value={sortKey}>
+          {#each Object.entries(SORT_LABELS) as [key, label]}
+            <option value={key}>{label}</option>
+          {/each}
+        </select>
+        <button title="Toggle sort direction" onclick={() => (sortAsc = !sortAsc)}>
+          {sortAsc ? "▲" : "▼"}
+        </button>
+      </div>
     {/if}
     <div class="view-toggle">
       <button class:active={viewMode === "list"} title="List view" onclick={() => (viewMode = "list")}>
@@ -256,6 +283,9 @@
                   onerror={coverFallback}
                 />
               {/if}
+              {#if game.storeRating !== undefined}
+                <span class="card-rating"><RatingIcon rating={game.storeRating} /></span>
+              {/if}
             </button>
             <button class="card-title title-link" title={game.title} onclick={() => (selectedGame = game)}>
               {@render storeBadges(game)}{game.title}
@@ -270,7 +300,9 @@
           <tr>
             <th>
               <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("title")}>Title{sortArrow("title")} ▾</button>
+                <button class="hbtn" class:sorted={sortKey === "title"} onclick={() => toggleMenu("title")}>
+                  Title{headArrow("title")}
+                </button>
                 {#if openMenu === "title"}
                   <div class="menu">
                     <button onclick={() => setSort("title", true)}>Sort A → Z</button>
@@ -281,7 +313,9 @@
             </th>
             <th>
               <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("status")}>Status{sortArrow("status")} ▾</button>
+                <button class="hbtn" class:sorted={sortKey === "status"} onclick={() => toggleMenu("status")}>
+                  Status{headArrow("status")}
+                </button>
                 {#if openMenu === "status"}
                   <div class="menu">
                     <button onclick={() => setSort("status", true)}>Sort ↑</button>
@@ -299,7 +333,9 @@
             </th>
             <th class="opt">
               <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("since")}>Since{sortArrow("since")} ▾</button>
+                <button class="hbtn" class:sorted={sortKey === "since"} onclick={() => toggleMenu("since")}>
+                  Since{headArrow("since")}
+                </button>
                 {#if openMenu === "since"}
                   <div class="menu">
                     <button onclick={() => setSort("since", false)}>Newest first</button>
@@ -310,8 +346,8 @@
             </th>
             <th class="opt">
               <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("playtime")}>
-                  Playtime{sortArrow("playtime")} ▾
+                <button class="hbtn" class:sorted={sortKey === "playtime"} onclick={() => toggleMenu("playtime")}>
+                  Playtime{headArrow("playtime")}
                 </button>
                 {#if openMenu === "playtime"}
                   <div class="menu">
@@ -323,8 +359,21 @@
             </th>
             <th class="opt">
               <div class="col-head">
-                <button class="hbtn" onclick={() => toggleMenu("rating")}>
-                  Rating{sortArrow("rating")} ▾
+                <button class="hbtn" class:sorted={sortKey === "released"} onclick={() => toggleMenu("released")}>
+                  Released{headArrow("released")}
+                </button>
+                {#if openMenu === "released"}
+                  <div class="menu">
+                    <button onclick={() => setSort("released", false)}>Newest first</button>
+                    <button onclick={() => setSort("released", true)}>Oldest first</button>
+                  </div>
+                {/if}
+              </div>
+            </th>
+            <th class="opt">
+              <div class="col-head">
+                <button class="hbtn" class:sorted={sortKey === "rating"} onclick={() => toggleMenu("rating")}>
+                  Rating{headArrow("rating")}
                 </button>
                 {#if openMenu === "rating"}
                   <div class="menu">
@@ -376,11 +425,13 @@
                   {#if game.status === "wishlist"}
                     <button class="aks" title="Check key prices" onclick={() => openAllkeyshop(game)}>💰</button>
                   {/if}
+                  <span class="title-rating"><RatingIcon rating={game.storeRating} /></span>
                 </div>
               </td>
               <td>{@render statusControl(game)}</td>
               <td class="muted opt">{formatDate(game.statusChangedAt)}</td>
               <td class="muted opt">{formatPlaytime(game.playtimeMinutes)}</td>
+              <td class="muted opt">{formatDate(game.releaseDate)}</td>
               <td class="muted opt">{game.storeRating ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
@@ -542,6 +593,28 @@
     width: 90px;
     accent-color: #5865f2;
   }
+  .sort-ctl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sort-label {
+    font-size: 12px;
+    color: #8b909a;
+  }
+  .sort-ctl select {
+    background: #14161a;
+    border: 1px solid #3a3e48;
+    border-radius: 7px;
+    padding: 4px 8px;
+    color: #e6e6e6;
+    font-size: 12px;
+  }
+  .sort-ctl button {
+    padding: 4px 9px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
   .view-toggle {
     margin-left: auto;
     display: flex;
@@ -605,6 +678,10 @@
   .hbtn:hover {
     color: #e6e6e6;
   }
+  .hbtn.sorted {
+    color: #e6e6e6;
+    font-weight: 700;
+  }
   .menu {
     position: absolute;
     top: 100%;
@@ -662,12 +739,22 @@
     gap: 8px;
   }
   .card-cover {
+    position: relative;
     aspect-ratio: 3 / 4;
     width: 100%;
     border-radius: 8px;
     background: #14161a;
     border: 1px solid #2c2f37;
     overflow: hidden;
+  }
+  .card-rating {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 5px;
+    background: rgba(20, 22, 26, 0.8);
   }
   .card-cover img {
     width: 100%;
@@ -733,6 +820,11 @@
     font-size: 13px;
     padding: 0 2px;
     flex: none;
+  }
+  .title-rating {
+    margin-left: auto;
+    flex: none;
+    display: inline-flex;
   }
   .cover {
     flex: none;

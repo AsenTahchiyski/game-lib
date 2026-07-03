@@ -22,8 +22,10 @@
     type Tag,
     type Game,
   } from "./types";
-  import { formatPlaytime, formatDate, allkeyshopUrl } from "./format";
+  import { formatPlaytime, formatDate, allkeyshopUrl, storeLinks } from "./format";
   import { coverFallback } from "./cover";
+  import StoreIcon from "./StoreIcon.svelte";
+  import RatingIcon from "./RatingIcon.svelte";
 
   let { game, onclose }: { game: Game; onclose: () => void } = $props();
 
@@ -122,7 +124,11 @@
         <dl class="stats">
           <div><dt>Playtime</dt><dd>{formatPlaytime(game.playtimeMinutes)}</dd></div>
           <div><dt>Since</dt><dd>{formatDate(game.statusChangedAt)}</dd></div>
-          <div><dt>Rating</dt><dd>{game.storeRating ?? "—"}</dd></div>
+          <div><dt>Released</dt><dd>{formatDate(game.releaseDate)}</dd></div>
+          <div>
+            <dt>Rating</dt>
+            <dd><RatingIcon rating={game.storeRating} /> {game.storeRating ?? "—"}</dd>
+          </div>
           <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
         </dl>
       </div>
@@ -164,6 +170,17 @@
       <input bind:value={coverDraft} placeholder="Paste an image URL…" />
       <button onclick={() => setCover(game, coverDraft)}>Set</button>
     </div>
+
+    {#if storeLinks(game).length > 0}
+      <h3>Store pages</h3>
+      <div class="chips">
+        {#each storeLinks(game) as link}
+          <button class="store-link" onclick={() => openUrl(link.url)}>
+            <StoreIcon store={link.store} /> {link.label} ↗
+          </button>
+        {/each}
+      </div>
+    {/if}
 
     {#if game.status === "wishlist"}
       <h3>Wishlist</h3>
@@ -366,6 +383,11 @@
   .chips button.active {
     border-color: currentColor;
     background: #14161a;
+  }
+  .store-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .tag-wrap {
     display: inline-flex;
