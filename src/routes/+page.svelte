@@ -13,7 +13,7 @@
     availableTags,
   } from "$lib/store.svelte";
   import { STATUSES, STATUS_LABELS, TAG_LABELS, type Tag, type Status, type Game } from "$lib/types";
-  import { formatPlaytime, formatDate, allkeyshopUrl } from "$lib/format";
+  import { formatPlaytime, formatDate, allkeyshopUrl, gameRating } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
@@ -21,11 +21,10 @@
   import RatingIcon from "$lib/RatingIcon.svelte";
   import { coverFallback } from "$lib/cover";
 
-  type SortKey = "title" | "status" | "since" | "playtime" | "released" | "rating";
+  type SortKey = "title" | "status" | "playtime" | "released" | "rating";
   const SORT_LABELS: Record<SortKey, string> = {
     title: "Title",
     status: "Status",
-    since: "Since",
     playtime: "Playtime",
     released: "Released",
     rating: "Rating",
@@ -58,14 +57,12 @@
         return a.title.localeCompare(b.title);
       case "status":
         return STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status);
-      case "since":
-        return (Date.parse(a.statusChangedAt ?? "") || 0) - (Date.parse(b.statusChangedAt ?? "") || 0);
       case "playtime":
         return (a.playtimeMinutes ?? -1) - (b.playtimeMinutes ?? -1);
       case "released":
         return (Date.parse(a.releaseDate ?? "") || 0) - (Date.parse(b.releaseDate ?? "") || 0);
       case "rating":
-        return (a.storeRating ?? -1) - (b.storeRating ?? -1);
+        return (gameRating(a) ?? -1) - (gameRating(b) ?? -1);
     }
   }
 
@@ -283,8 +280,8 @@
                   onerror={coverFallback}
                 />
               {/if}
-              {#if game.storeRating !== undefined}
-                <span class="card-rating"><RatingIcon rating={game.storeRating} /></span>
+              {#if gameRating(game) !== undefined}
+                <span class="card-rating"><RatingIcon rating={gameRating(game)} /></span>
               {/if}
             </button>
             <button class="card-title title-link" title={game.title} onclick={() => (selectedGame = game)}>
@@ -327,19 +324,6 @@
                         {STATUS_LABELS[s]}
                       </button>
                     {/each}
-                  </div>
-                {/if}
-              </div>
-            </th>
-            <th class="opt">
-              <div class="col-head">
-                <button class="hbtn" class:sorted={sortKey === "since"} onclick={() => toggleMenu("since")}>
-                  Since{headArrow("since")}
-                </button>
-                {#if openMenu === "since"}
-                  <div class="menu">
-                    <button onclick={() => setSort("since", false)}>Newest first</button>
-                    <button onclick={() => setSort("since", true)}>Oldest first</button>
                   </div>
                 {/if}
               </div>
@@ -425,14 +409,13 @@
                   {#if game.status === "wishlist"}
                     <button class="aks" title="Check key prices" onclick={() => openAllkeyshop(game)}>💰</button>
                   {/if}
-                  <span class="title-rating"><RatingIcon rating={game.storeRating} /></span>
+                  <span class="title-rating"><RatingIcon rating={gameRating(game)} /></span>
                 </div>
               </td>
               <td>{@render statusControl(game)}</td>
-              <td class="muted opt">{formatDate(game.statusChangedAt)}</td>
               <td class="muted opt">{formatPlaytime(game.playtimeMinutes)}</td>
               <td class="muted opt">{formatDate(game.releaseDate)}</td>
-              <td class="muted opt">{game.storeRating ?? "—"}</td>
+              <td class="muted opt">{gameRating(game) ?? "—"}</td>
               <td class="sources">
                 {#each Object.keys(game.sources) as src}
                   <span class="src-icon" title={src}><StoreIcon store={src} /></span>

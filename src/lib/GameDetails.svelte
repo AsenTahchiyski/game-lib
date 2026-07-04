@@ -22,7 +22,7 @@
     type Tag,
     type Game,
   } from "./types";
-  import { formatPlaytime, formatDate, allkeyshopUrl, storeLinks } from "./format";
+  import { formatPlaytime, formatDate, allkeyshopUrl, storeLinks, gameRating } from "./format";
   import { coverFallback } from "./cover";
   import StoreIcon from "./StoreIcon.svelte";
   import RatingIcon from "./RatingIcon.svelte";
@@ -127,7 +127,7 @@
           <div><dt>Released</dt><dd>{formatDate(game.releaseDate)}</dd></div>
           <div>
             <dt>Rating</dt>
-            <dd><RatingIcon rating={game.storeRating} /> {game.storeRating ?? "—"}</dd>
+            <dd><RatingIcon rating={gameRating(game)} /> {gameRating(game) ?? "—"}</dd>
           </div>
           <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
         </dl>

@@ -108,9 +108,11 @@ async fn fetch_store_items(
                 appid,
                 StoreItem {
                     name: it.get("name").and_then(|n| n.as_str()).map(String::from),
+                    // 0 means "no reviews yet" (e.g. unreleased) — treat as unknown.
                     percent_positive: it
                         .pointer("/reviews/summary_filtered/percent_positive")
                         .and_then(|p| p.as_u64())
+                        .filter(|&n| n > 0)
                         .map(|n| n as u32),
                     // 0 means TBA/unreleased — treat as unknown.
                     release_timestamp: it
@@ -136,6 +138,7 @@ async fn fetch_metacritic(client: &reqwest::Client, appid: u32) -> Option<u32> {
         .get("metacritic")?
         .get("score")?
         .as_u64()
+        .filter(|&n| n > 0)
         .map(|n| n as u32)
 }
 

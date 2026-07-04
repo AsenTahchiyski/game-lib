@@ -1,14 +1,13 @@
 <script lang="ts">
   // Steam-style review summary icon: thumbs-up / tilde / thumbs-down, using
-  // Steam's own buckets (≥70% positive, 40–69% mixed, <40% negative).
+  // Steam's own buckets (≥70% positive, 40–69% mixed, <40% negative). A 0
+  // means "no reviews" (e.g. unreleased), not a real score — show nothing.
   let { rating, size = 14 }: { rating: number | undefined; size?: number } = $props();
 
-  const kind = $derived(
-    rating === undefined ? null : rating >= 70 ? "up" : rating >= 40 ? "mixed" : "down",
-  );
+  const kind = $derived(!rating ? null : rating >= 70 ? "up" : rating >= 40 ? "mixed" : "down");
 </script>
 
-{#if kind !== null && rating !== undefined}
+{#if kind !== null && rating}
   <span class="rating-icon" title="Rating: {rating}/100">
     {#if kind === "up"}
       <svg width={size} height={size} viewBox="0 0 24 24" fill="#66c0f4" role="img" aria-label="Positive">

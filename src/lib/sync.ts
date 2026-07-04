@@ -181,10 +181,9 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       bySource.set(ig.id, existing);
       if (ig.playtimeMinutes !== undefined) existing.playtimeMinutes = ig.playtimeMinutes;
       if (!existing.coverUrl && ig.coverUrl) existing.coverUrl = ig.coverUrl;
-      if (existing.storeRating === undefined && ig.storeRating !== undefined)
-        existing.storeRating = ig.storeRating;
-      if (existing.metacritic === undefined && ig.metacritic !== undefined)
-        existing.metacritic = ig.metacritic;
+      // A stored 0 is a legacy "no reviews" artifact, not a score — replace it.
+      if (!existing.storeRating && ig.storeRating) existing.storeRating = ig.storeRating;
+      if (!existing.metacritic && ig.metacritic) existing.metacritic = ig.metacritic;
       // The store is authoritative for the release date, so update it freely.
       if (ig.releaseDate) existing.releaseDate = ig.releaseDate;
       // Only the curated source (IGN) updates an existing status, and never

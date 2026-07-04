@@ -61,6 +61,15 @@ export function storeLinks(game: Game): StoreLink[] {
   return links;
 }
 
+/**
+ * Rating to display for a game: the store's own rating, falling back to
+ * Metacritic. A 0 means "no reviews yet" (e.g. unreleased), not a real score,
+ * so it counts as unknown.
+ */
+export function gameRating(game: Game): number | undefined {
+  return game.storeRating || game.metacritic || undefined;
+}
+
 export function formatDate(iso: string | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
