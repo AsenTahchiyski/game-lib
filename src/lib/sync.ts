@@ -248,6 +248,7 @@ export function mergeDuplicate(target: Game, dup: Game): void {
   if (target.storeRating === undefined) target.storeRating = dup.storeRating;
   if (target.metacritic === undefined) target.metacritic = dup.metacritic;
   if (target.releaseDate === undefined) target.releaseDate = dup.releaseDate;
+  if (target.hltb === undefined) target.hltb = dup.hltb;
   target.statusHistory = [...target.statusHistory, ...dup.statusHistory];
   if (dup.addedAt < target.addedAt) target.addedAt = dup.addedAt;
   if (dup.lastSyncedAt && (!target.lastSyncedAt || dup.lastSyncedAt > target.lastSyncedAt)) {

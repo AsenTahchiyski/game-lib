@@ -12,6 +12,8 @@
     addCustomTag,
     deleteCustomTag,
     mergeRecords,
+    sourceEnabled,
+    fetchHltb,
   } from "./store.svelte";
   import {
     STATUSES,
@@ -22,7 +24,14 @@
     type Tag,
     type Game,
   } from "./types";
-  import { formatPlaytime, formatDate, allkeyshopUrl, storeLinks, gameRating } from "./format";
+  import {
+    formatPlaytime,
+    formatDate,
+    allkeyshopUrl,
+    ggdealsUrl,
+    storeLinks,
+    gameRating,
+  } from "./format";
   import { coverFallback } from "./cover";
   import StoreIcon from "./StoreIcon.svelte";
   import RatingIcon from "./RatingIcon.svelte";
@@ -60,6 +69,23 @@
   $effect(() => {
     coverDraft = game.coverUrl ?? "";
   });
+
+  // Store links, minus any store toggled off in Settings.
+  const links = $derived(storeLinks(game).filter((l) => sourceEnabled(l.store)));
+
+  // Fetch HowLongToBeat times the first time a game's details open. The result
+  // (even "no entry") is cached on the record; a plain (non-reactive) guard
+  // keeps a failed fetch from looping — it just retries on the next open.
+  let hltbBusy = $state(false);
+  let hltbTriedFor = "";
+  $effect(() => {
+    if (game.hltb === undefined && hltbTriedFor !== game.id) {
+      hltbTriedFor = game.id;
+      hltbBusy = true;
+      fetchHltb(game).finally(() => (hltbBusy = false));
+    }
+  });
+  const hltbCell = (minutes: number | undefined) => (hltbBusy ? "…" : formatPlaytime(minutes));
 
   // Only history entries with a real recorded date — import artifacts are dropped.
   const datedHistory = $derived(game.statusHistory.filter((e) => !!e.at));
@@ -117,7 +143,7 @@
           <h2>{game.title} <button class="edit" title="Rename" onclick={startRename}>✎</button></h2>
         {/if}
         <div class="sources">
-          {#each Object.keys(game.sources) as src}
+          {#each Object.keys(game.sources).filter(sourceEnabled) as src}
             <span class="src">{src}</span>
           {/each}
         </div>
@@ -130,6 +156,9 @@
             <dd><RatingIcon rating={gameRating(game)} /> {gameRating(game) ?? "—"}</dd>
           </div>
           <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
+          <div><dt>HLTB Story</dt><dd>{hltbCell(game.hltb?.main)}</dd></div>
+          <div><dt>HLTB + Extras</dt><dd>{hltbCell(game.hltb?.extra)}</dd></div>
+          <div><dt>HLTB 100%</dt><dd>{hltbCell(game.hltb?.completionist)}</dd></div>
         </dl>
       </div>
     </div>
@@ -171,10 +200,10 @@
       <button onclick={() => setCover(game, coverDraft)}>Set</button>
     </div>
 
-    {#if storeLinks(game).length > 0}
+    {#if links.length > 0}
       <h3>Store pages</h3>
       <div class="chips">
-        {#each storeLinks(game) as link}
+        {#each links as link}
           <button class="store-link" onclick={() => openUrl(link.url)}>
             <StoreIcon store={link.store} /> {link.label} ↗
           </button>
@@ -182,11 +211,18 @@
       </div>
     {/if}
 
-    {#if game.status === "wishlist"}
+    {#if game.status === "wishlist" && (sourceEnabled("allkeyshop") || sourceEnabled("ggdeals"))}
       <h3>Wishlist</h3>
-      <button class="full" onclick={() => openUrl(allkeyshopUrl(game.title))}>
-        Check PC Steam key prices on Allkeyshop ↗
-      </button>
+      {#if sourceEnabled("allkeyshop")}
+        <button class="full" onclick={() => openUrl(allkeyshopUrl(game.title))}>
+          Check PC Steam key prices on Allkeyshop ↗
+        </button>
+      {/if}
+      {#if sourceEnabled("ggdeals")}
+        <button class="full" onclick={() => openUrl(ggdealsUrl(game.title))}>
+          Compare deals on GG.deals ↗
+        </button>
+      {/if}
     {/if}
 
     <h3>Merge another record into this one</h3>
@@ -199,7 +235,7 @@
           <li>
             <button onclick={() => doMerge(g)}>
               {g.title}
-              <span class="muted">{Object.keys(g.sources).join(", ") || "manual"}</span>
+              <span class="muted">{Object.keys(g.sources).filter(sourceEnabled).join(", ") || "manual"}</span>
             </button>
           </li>
         {/each}

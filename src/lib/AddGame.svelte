@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { addManualGame } from "./store.svelte";
+  import { addManualGame, sourceEnabled } from "./store.svelte";
   import { STATUSES, STATUS_LABELS, type Status, type StoreId } from "./types";
+
+  const STORES: StoreId[] = ["steam", "gog", "epic", "ign"];
+  const STORE_NAMES: Record<StoreId, string> = { steam: "Steam", gog: "GOG", epic: "Epic", ign: "IGN" };
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -45,10 +48,9 @@
       Store {status === "wishlist" ? "(optional)" : ""}
       <select bind:value={store}>
         <option value="">— none —</option>
-        <option value="steam">Steam</option>
-        <option value="gog">GOG</option>
-        <option value="epic">Epic</option>
-        <option value="ign">IGN</option>
+        {#each STORES.filter(sourceEnabled) as s}
+          <option value={s}>{STORE_NAMES[s]}</option>
+        {/each}
       </select>
     </label>
     {#if store}

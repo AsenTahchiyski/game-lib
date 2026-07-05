@@ -19,6 +19,13 @@ export function allkeyshopUrl(title: string): string {
   return `https://www.allkeyshop.com/blog/buy-${slug}-cd-key-compare-prices/`;
 }
 
+/** GG.deals price-comparison link. Title search, not a /game/<slug>/ deep
+ *  link: their slugs aren't reliably derivable from titles, and a search hit
+ *  for an exact title lands on the game page anyway. */
+export function ggdealsUrl(title: string): string {
+  return `https://gg.deals/games/?title=${encodeURIComponent(title)}`;
+}
+
 export interface StoreLink {
   store: StoreId;
   label: string;

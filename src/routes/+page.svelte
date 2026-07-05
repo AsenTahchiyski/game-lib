@@ -11,9 +11,11 @@
     saveLibrary,
     setStatus,
     availableTags,
+    sourceEnabled,
+    gameVisible,
   } from "$lib/store.svelte";
   import { STATUSES, STATUS_LABELS, TAG_LABELS, type Tag, type Status, type Game } from "$lib/types";
-  import { formatPlaytime, formatDate, allkeyshopUrl, gameRating } from "$lib/format";
+  import { formatPlaytime, formatDate, allkeyshopUrl, ggdealsUrl, gameRating } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
@@ -66,14 +68,21 @@
     }
   }
 
+  // Stores that aren't toggled off in Settings; disabled ones vanish from the
+  // whole page (badges, sources column, and games they exclusively provide).
+  const enabledStores = $derived(SOURCE_IDS.filter(sourceEnabled));
+  const visibleGames = $derived(app.library.games.filter(gameVisible));
+
   const filtered = $derived.by(() => {
     const q = search.toLowerCase();
-    const list = app.library.games.filter(
+    const list = visibleGames.filter(
       (g) =>
         (statusFilter === "all" || g.status === statusFilter) &&
         g.title.toLowerCase().includes(q) &&
         (sourceFilter.size === 0 ||
-          SOURCE_IDS.some((s) => sourceFilter.has(s) && (g.sources as Record<string, unknown>)[s])) &&
+          enabledStores.some(
+            (s) => sourceFilter.has(s) && (g.sources as Record<string, unknown>)[s],
+          )) &&
         (tagFilter.size === 0 || (g.tags ?? []).some((t) => tagFilter.has(t))),
     );
     const dir = sortAsc ? 1 : -1;
@@ -82,9 +91,9 @@
 
   // Count of games per status, for the filter chips.
   const counts = $derived.by(() => {
-    const c: Record<string, number> = { all: app.library.games.length };
+    const c: Record<string, number> = { all: visibleGames.length };
     for (const s of STATUSES) c[s] = 0;
-    for (const g of app.library.games) c[g.status]++;
+    for (const g of visibleGames) c[g.status]++;
     return c;
   });
 
@@ -113,6 +122,10 @@
 
   function openAllkeyshop(game: Game) {
     openUrl(allkeyshopUrl(game.title));
+  }
+
+  function openGgdeals(game: Game) {
+    openUrl(ggdealsUrl(game.title));
   }
 
   async function handleNew() {
@@ -177,7 +190,7 @@
 {/snippet}
 
 {#snippet storeBadges(game: Game)}
-  {#each Object.keys(game.sources) as src}
+  {#each Object.keys(game.sources).filter(sourceEnabled) as src}
     <span class="store-badge" title={src}><StoreIcon store={src} size={13} /></span>
   {/each}
 {/snippet}
@@ -374,7 +387,7 @@
                 </button>
                 {#if openMenu === "sources"}
                   <div class="menu">
-                    {#each SOURCE_IDS as s}
+                    {#each enabledStores as s}
                       <label class="check">
                         <input type="checkbox" checked={sourceFilter.has(s)} onchange={() => toggleSource(s)} />
                         {s}
@@ -407,7 +420,12 @@
                   </button>
                   <button class="title-link" onclick={() => (selectedGame = game)}>{game.title}</button>
                   {#if game.status === "wishlist"}
-                    <button class="aks" title="Check key prices" onclick={() => openAllkeyshop(game)}>💰</button>
+                    {#if sourceEnabled("allkeyshop")}
+                      <button class="aks" title="Key prices on Allkeyshop" onclick={() => openAllkeyshop(game)}>💰</button>
+                    {/if}
+                    {#if sourceEnabled("ggdeals")}
+                      <button class="aks" title="Deals on GG.deals" onclick={() => openGgdeals(game)}>🏷️</button>
+                    {/if}
                   {/if}
                   <span class="title-rating"><RatingIcon rating={gameRating(game)} /></span>
                 </div>
@@ -417,7 +435,7 @@
               <td class="muted opt">{formatDate(game.releaseDate)}</td>
               <td class="muted opt">{gameRating(game) ?? "—"}</td>
               <td class="sources">
-                {#each Object.keys(game.sources) as src}
+                {#each Object.keys(game.sources).filter(sourceEnabled) as src}
                   <span class="src-icon" title={src}><StoreIcon store={src} /></span>
                 {/each}
               </td>

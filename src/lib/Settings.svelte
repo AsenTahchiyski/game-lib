@@ -9,7 +9,10 @@
     epicConnect,
     syncEpicLibrary,
     syncIgnLibrary,
+    sourceEnabled,
+    toggleSourceEnabled,
   } from "./store.svelte";
+  import { SOURCE_TOGGLES, SOURCE_TOGGLE_LABELS } from "./types";
   import { gogLoginUrl, epicLoginUrl } from "./api";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -162,6 +165,23 @@
     <h2>Settings</h2>
 
     <section>
+      <h3>Sources</h3>
+      <p class="note">
+        Toggle a source off to hide it everywhere in the app — its badges, links, sync section,
+        and any game only that source provides. Nothing is deleted; toggling back on restores it.
+      </p>
+      <div class="toggles">
+        {#each SOURCE_TOGGLES as s}
+          <label class="toggle">
+            <input type="checkbox" checked={sourceEnabled(s)} onchange={() => toggleSourceEnabled(s)} />
+            {SOURCE_TOGGLE_LABELS[s]}
+          </label>
+        {/each}
+      </div>
+    </section>
+
+    {#if sourceEnabled("steam")}
+    <section>
       <h3>Steam</h3>
       <p class="note">
         Get an API key at
@@ -183,7 +203,9 @@
       {#if steamMsg}<p class="ok">{steamMsg}</p>{/if}
       {#if steamErr}<p class="err">{steamErr}</p>{/if}
     </section>
+    {/if}
 
+    {#if sourceEnabled("gog")}
     <section>
       <h3>GOG {#if gogConnected}<span class="badge">connected</span>{/if}</h3>
       <p class="note">
@@ -202,7 +224,9 @@
       {#if gogMsg}<p class="ok">{gogMsg}</p>{/if}
       {#if gogErr}<p class="err">{gogErr}</p>{/if}
     </section>
+    {/if}
 
+    {#if sourceEnabled("epic")}
     <section>
       <h3>Epic {#if epicConnected}<span class="badge">connected</span>{/if}</h3>
       <p class="note">
@@ -221,7 +245,9 @@
       {#if epicMsg}<p class="ok">{epicMsg}</p>{/if}
       {#if epicErr}<p class="err">{epicErr}</p>{/if}
     </section>
+    {/if}
 
+    {#if sourceEnabled("ign")}
     <section>
       <h3>IGN Playlist</h3>
       <p class="note">
@@ -240,6 +266,7 @@
       {#if ignMsg}<p class="ok">{ignMsg}</p>{/if}
       {#if ignErr}<p class="err">{ignErr}</p>{/if}
     </section>
+    {/if}
 
     <div class="actions">
       <button onclick={onclose}>Cancel</button>
@@ -318,6 +345,25 @@
     gap: 8px;
     align-items: stretch;
     margin: 8px 0;
+  }
+  .toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #e6e6e6;
+    margin-bottom: 0;
+  }
+  .toggle input {
+    display: inline;
+    width: auto;
+    margin: 0;
+    accent-color: #5865f2;
   }
   .row input {
     margin-top: 0;

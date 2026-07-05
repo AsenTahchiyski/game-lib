@@ -1,6 +1,7 @@
 mod commands;
 mod epic;
 mod gog;
+mod hltb;
 mod ign;
 mod steam;
 
@@ -21,6 +22,7 @@ pub fn run() {
             epic::epic_exchange_code,
             epic::epic_sync,
             ign::ign_sync,
+            hltb::hltb_search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

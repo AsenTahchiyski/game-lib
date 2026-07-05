@@ -43,6 +43,29 @@ export const TAG_LABELS: Record<Tag, string> = {
 
 export type StoreId = "steam" | "gog" | "epic" | "ign";
 
+// Everything that can be toggled off in Settings: the store integrations plus
+// the external price-check links. Off = the source and its data disappear from
+// the whole app (badges, links, sync sections, games it exclusively provides).
+export type SourceToggle = StoreId | "allkeyshop" | "ggdeals";
+
+export const SOURCE_TOGGLES: SourceToggle[] = [
+  "steam",
+  "gog",
+  "epic",
+  "ign",
+  "allkeyshop",
+  "ggdeals",
+];
+
+export const SOURCE_TOGGLE_LABELS: Record<SourceToggle, string> = {
+  steam: "Steam",
+  gog: "GOG",
+  epic: "Epic",
+  ign: "IGN",
+  allkeyshop: "Allkeyshop",
+  ggdeals: "GG.deals",
+};
+
 export interface Sources {
   steam?: { appid: number };
   gog?: { id: string };
@@ -53,6 +76,16 @@ export interface Sources {
 export interface StatusEvent {
   status: Status;
   at: string; // ISO-8601
+}
+
+// HowLongToBeat completion times, in minutes (like playtimeMinutes). All three
+// missing = HLTB was checked but had no entry; checkedAt records when, so a
+// future manual refresh could re-query.
+export interface HltbTimes {
+  main?: number;
+  extra?: number;
+  completionist?: number;
+  checkedAt: string; // ISO-8601
 }
 
 export interface Game {
@@ -69,6 +102,7 @@ export interface Game {
   storeRating?: number; // 0-100, the source store's own rating
   metacritic?: number; // 0-100
   releaseDate?: string; // ISO-8601 date (yyyy-mm-dd); undefined = unknown
+  hltb?: HltbTimes; // HowLongToBeat times; undefined = never fetched
   tags?: string[]; // orthogonal labels, e.g. "coop", "casual"
   userEdited?: boolean; // user changed status/title/etc — protect from sync overwrite
   addedAt: string; // ISO-8601
@@ -92,6 +126,9 @@ export interface Settings {
   epicRefreshToken?: string;
   ignNickname?: string;
   lastLibraryPath?: string;
+  // Sources the user toggled OFF in Settings (default: all enabled). Stored as
+  // a deny-list so newly added sources default to on.
+  disabledSources?: SourceToggle[];
 }
 
 export function emptyLibrary(): Library {

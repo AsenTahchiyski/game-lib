@@ -71,3 +71,13 @@ export const epicSync = (refreshToken: string) =>
 
 export const ignSync = (nickname: string) =>
   invoke<IgnGame[]>("ign_sync", { nickname });
+
+/** HowLongToBeat completion times in minutes; null = no HLTB entry found. */
+export interface HltbSearchResult {
+  main?: number;
+  extra?: number;
+  completionist?: number;
+}
+
+export const hltbSearch = (title: string) =>
+  invoke<HltbSearchResult | null>("hltb_search", { title });

@@ -6,6 +6,7 @@ import {
   type Game,
   type Library,
   type Settings,
+  type SourceToggle,
   type Status,
   type StoreId,
 } from "./types";
@@ -167,6 +168,42 @@ export function toggleTag(game: Game, tag: string) {
   game.tags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
   game.userEdited = true;
   touch();
+}
+
+/** Whether a source (store or price site) is enabled. Default: on. */
+export function sourceEnabled(id: string): boolean {
+  return !(app.settings.disabledSources ?? []).includes(id as SourceToggle);
+}
+
+/** Flip a source toggle and persist immediately (it's device config, not library data). */
+export function toggleSourceEnabled(id: SourceToggle) {
+  const cur = app.settings.disabledSources ?? [];
+  app.settings.disabledSources = cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id];
+  void persistSettings();
+}
+
+/**
+ * A game is hidden when every source it came from is toggled off. Manual
+ * entries (no sources) are always visible.
+ */
+export function gameVisible(game: Game): boolean {
+  const srcs = Object.keys(game.sources);
+  return srcs.length === 0 || srcs.some(sourceEnabled);
+}
+
+/**
+ * Fetch HowLongToBeat times for a game and cache them on the record (also for
+ * "no entry found", so we don't re-query on every details open). Network
+ * errors leave the game untouched — the next open retries.
+ */
+export async function fetchHltb(game: Game): Promise<void> {
+  try {
+    const times = await api.hltbSearch(game.title);
+    game.hltb = { ...(times ?? {}), checkedAt: new Date().toISOString() };
+    touch();
+  } catch {
+    // HLTB unreachable or its API shape changed; stay quiet, retry next time.
+  }
 }
 
 export async function persistSettings() {
