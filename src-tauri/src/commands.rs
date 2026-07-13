@@ -27,3 +27,25 @@ pub fn save_settings(app: tauri::AppHandle, settings: Value) -> Result<(), Strin
     let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(&path, text).map_err(|e| e.to_string())
 }
+
+/// Version of the newest available build. Installers are rebuilt from main on
+/// every push, so main's package.json version is what the rolling releases
+/// (latest-desktop / latest-android) currently serve.
+#[tauri::command]
+pub async fn latest_version() -> Result<String, String> {
+    let url = "https://raw.githubusercontent.com/AsenTahchiyski/game-lib/main/package.json";
+    let pkg: Value = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    pkg["version"]
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "no version field in package.json".to_string())
+}

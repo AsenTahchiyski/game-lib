@@ -30,7 +30,23 @@ export const app = $state({
   loadedMtime: null as number | null, // file mtime when we last read/wrote it
   busy: false,
   error: null as string | null,
+  changeSeq: 0, // bumped on every library mutation; drives the autosave/undo window
+  updateAvailable: null as string | null, // newer released version, if any
 });
+
+// Plain (non-proxied) copy of the library as of the last load/save — what
+// "Undo" restores. Refreshed after every successful read/write.
+let cleanLibrary: Library = emptyLibrary();
+
+function markClean() {
+  cleanLibrary = $state.snapshot(app.library) as Library;
+}
+
+/** Revert every change made since the last save/load (the autosave undo window). */
+export function undoChanges() {
+  app.library = structuredClone(cleanLibrary);
+  app.dirty = false;
+}
 
 const BUILTIN_TAGS: string[] = TAGS;
 
@@ -41,6 +57,7 @@ function steamCover(appid: number): string {
 function touch() {
   app.library.updatedAt = new Date().toISOString();
   app.dirty = true;
+  app.changeSeq++;
 }
 
 /** Change a game's status, recording the date and appending to history. */
@@ -154,6 +171,17 @@ export function renameGame(game: Game, title: string) {
   touch();
 }
 
+/** Set (or clear) the release date by hand. Marks the game user-edited so a
+ *  later store sync won't put a wrong date back (Steam often reports the
+ *  *Steam* release of an older game, e.g. Armed and Dangerous 2009 vs 2003). */
+export function setReleaseDate(game: Game, date: string) {
+  const d = date.trim();
+  if (d === (game.releaseDate ?? "")) return;
+  game.releaseDate = d || undefined;
+  game.userEdited = true;
+  touch();
+}
+
 /** Set (or clear) a manual cover image URL for a game. */
 export function setCover(game: Game, url: string) {
   const u = url.trim();
@@ -227,6 +255,7 @@ async function loadPath(path: string) {
     cleaned += before - g.statusHistory.length;
   }
   app.dirty = removed > 0 || cleaned > 0;
+  markClean();
   if (app.settings.lastLibraryPath !== path) {
     app.settings.lastLibraryPath = path;
     await persistSettings();
@@ -240,7 +269,13 @@ export async function init() {
     try {
       await loadPath(app.settings.lastLibraryPath);
     } catch {
-      // The file may have moved/unmounted (NAS); start empty without nagging.
+      // The file may have moved/unmounted (NAS); start empty. On Android the
+      // OS revokes access to picked files after a reinstall — silence there
+      // would look like data loss, so say how to get the library back.
+      if (app.settings.lastLibraryPath.startsWith("content://")) {
+        app.error =
+          "Android revoked the app's access to your library file. Use Open… and re-select it to restore access — the data is still there.";
+      }
     }
   }
 }
@@ -264,6 +299,7 @@ export function newLibrary() {
   app.currentPath = null;
   app.loadedMtime = null;
   app.dirty = true;
+  markClean();
 }
 
 /** Pull the Steam library and merge it in. Returns counts of added/updated. */
@@ -278,8 +314,7 @@ export async function syncSteamLibrary(): Promise<MergeResult> {
     const games = await api.syncSteam(steamApiKey, steamId);
     const result = mergeSteamGames(app.library, games);
     dedupeLibrary(app.library);
-    app.library.updatedAt = new Date().toISOString();
-    app.dirty = true;
+    touch();
     return result;
   } finally {
     app.busy = false;
@@ -313,8 +348,7 @@ export async function syncGogLibrary(): Promise<MergeResult> {
     await persistSettings();
     const result = mergeGogGames(app.library, games);
     dedupeLibrary(app.library);
-    app.library.updatedAt = new Date().toISOString();
-    app.dirty = true;
+    touch();
     return result;
   } finally {
     app.busy = false;
@@ -348,8 +382,7 @@ export async function syncEpicLibrary(): Promise<MergeResult> {
     await persistSettings();
     const result = mergeEpicGames(app.library, games);
     dedupeLibrary(app.library);
-    app.library.updatedAt = new Date().toISOString();
-    app.dirty = true;
+    touch();
     return result;
   } finally {
     app.busy = false;
@@ -372,15 +405,14 @@ export async function syncIgnLibrary(): Promise<MergeResult> {
     const games = await api.ignSync(nickname);
     const result = mergeIgnGames(app.library, games);
     dedupeLibrary(app.library);
-    app.library.updatedAt = new Date().toISOString();
-    app.dirty = true;
+    touch();
     return result;
   } finally {
     app.busy = false;
   }
 }
 
-export type SaveResult = "saved" | "cancelled" | "conflict";
+export type SaveResult = "saved" | "cancelled" | "conflict" | "no-access";
 
 /**
  * Persist the library. Returns "conflict" if the on-disk file is newer than the
@@ -405,15 +437,54 @@ export async function saveLibrary(force = false): Promise<SaveResult> {
     app.currentPath = path;
     app.loadedMtime = await api.fileMtime(path);
     app.dirty = false;
+    markClean();
     if (app.settings.lastLibraryPath !== path) {
       app.settings.lastLibraryPath = path;
       await persistSettings();
     }
     return "saved";
   } catch (e) {
+    // Android revokes SAF/MediaStore write grants after a reinstall (and
+    // sometimes a restart) — "com.asen.gamelib has no access to content://…".
+    // Signal the UI to have the user re-pick the file, which re-grants access.
+    if (path.startsWith("content://")) {
+      return "no-access";
+    }
     app.error = String(e);
     return "cancelled";
   } finally {
     app.busy = false;
   }
+}
+
+/** Pick a (new) location and save there, regardless of the current path.
+ *  Re-picking the same file is how Android access is re-granted. */
+export async function saveLibraryAs(): Promise<SaveResult> {
+  const path = await api.pickSavePath();
+  if (!path) return "cancelled";
+  app.currentPath = path;
+  app.loadedMtime = null;
+  return saveLibrary(true);
+}
+
+/** Compare dotted version strings; true when `latest` is newer. */
+function newerVersion(current: string, latest: string): boolean {
+  const a = current.split(".").map(Number);
+  const b = latest.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
+/**
+ * Check GitHub for a newer released version (installers are rebuilt from main
+ * on every push, so main's package.json version == the newest build). Sets
+ * app.updateAvailable; returns it. Throws on network failure.
+ */
+export async function checkForUpdate(current: string): Promise<string | null> {
+  const latest = await api.latestVersion();
+  app.updateAvailable = newerVersion(current, latest) ? latest : null;
+  return app.updateAvailable;
 }

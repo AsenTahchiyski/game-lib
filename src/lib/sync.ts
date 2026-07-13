@@ -184,8 +184,10 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       // A stored 0 is a legacy "no reviews" artifact, not a score — replace it.
       if (!existing.storeRating && ig.storeRating) existing.storeRating = ig.storeRating;
       if (!existing.metacritic && ig.metacritic) existing.metacritic = ig.metacritic;
-      // The store is authoritative for the release date, so update it freely.
-      if (ig.releaseDate) existing.releaseDate = ig.releaseDate;
+      // The store is authoritative for the release date — unless the user
+      // corrected it by hand (Steam reports the *Steam* release of older
+      // games, which can be years off the original date).
+      if (ig.releaseDate && !existing.userEdited) existing.releaseDate = ig.releaseDate;
       // Only the curated source (IGN) updates an existing status, and never
       // over a status the user set themselves.
       if (store === "ign" && ig.status && existing.status !== ig.status && !existing.userEdited) {

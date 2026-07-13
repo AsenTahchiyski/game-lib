@@ -14,6 +14,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::load_settings,
             commands::save_settings,
+            commands::latest_version,
             steam::sync_steam,
             gog::gog_login_url,
             gog::gog_exchange_code,

@@ -81,3 +81,6 @@ export interface HltbSearchResult {
 
 export const hltbSearch = (title: string) =>
   invoke<HltbSearchResult | null>("hltb_search", { title });
+
+/** Version of the newest available build (package.json on main). */
+export const latestVersion = () => invoke<string>("latest_version");

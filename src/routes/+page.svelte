@@ -7,15 +7,17 @@
     app,
     init,
     openLibrary,
-    newLibrary,
     saveLibrary,
+    saveLibraryAs,
+    undoChanges,
+    checkForUpdate,
     setStatus,
     availableTags,
     sourceEnabled,
     gameVisible,
   } from "$lib/store.svelte";
   import { STATUSES, STATUS_LABELS, TAG_LABELS, type Tag, type Status, type Game } from "$lib/types";
-  import { formatPlaytime, formatDate, allkeyshopUrl, ggdealsUrl, gameRating } from "$lib/format";
+  import { formatPlaytime, formatDate, allkeyshopUrl, ggdealsUrl, gameRating, releaseUrl } from "$lib/format";
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
@@ -51,6 +53,8 @@
   onMount(async () => {
     await init();
     version = await getVersion();
+    // Best-effort update check; offline or rate-limited is just "no banner".
+    checkForUpdate(version).catch(() => {});
   });
 
   function compareBy(a: Game, b: Game, key: SortKey): number {
@@ -105,6 +109,66 @@
         { title: "Newer version on disk", kind: "warning" },
       );
       if (overwrite) await saveLibrary(true);
+    } else if (result === "no-access") {
+      const repick = await confirm(
+        "The app lost write access to the library file — Android revokes it after the app is reinstalled or updated.\n\nRe-select the file now to restore access? (Pick the same file; nothing is lost.)",
+        { title: "File access lost", kind: "warning" },
+      );
+      if (repick) await saveLibraryAs();
+    }
+  }
+
+  // ---- Autosave with an undo window ----------------------------------------
+  // Every library change opens (or refreshes) a 10 s window announced by a
+  // toast; when it lapses the library autosaves. Undo restores the state of
+  // the last save/load. A brand-new library (no file yet) still uses the
+  // explicit Save button instead.
+  const UNDO_SECONDS = 10;
+  let toast = $state<"none" | "pending" | "saved">("none");
+  let undoSecs = $state(UNDO_SECONDS);
+  let undoTicker: ReturnType<typeof setInterval> | undefined;
+  let savedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  let lastSeq = 0;
+  $effect(() => {
+    const seq = app.changeSeq;
+    // Only a NEW change opens the window — not a re-run from the path or
+    // dirty flag changing (e.g. after open/save-as, or an undo).
+    if (seq === 0 || seq === lastSeq || !app.currentPath || !app.dirty) return;
+    lastSeq = seq;
+    startUndoWindow();
+  });
+
+  function startUndoWindow() {
+    clearInterval(undoTicker);
+    clearTimeout(savedTimer);
+    toast = "pending";
+    undoSecs = UNDO_SECONDS;
+    undoTicker = setInterval(() => {
+      undoSecs--;
+      if (undoSecs <= 0) {
+        clearInterval(undoTicker);
+        toast = "none";
+        void autosaveNow();
+      }
+    }, 1000);
+  }
+
+  function undoNow() {
+    clearInterval(undoTicker);
+    toast = "none";
+    selectedGame = null; // it may point at a game the undo just rewrote
+    undoChanges();
+  }
+
+  async function autosaveNow() {
+    if (!app.dirty) return; // e.g. a different file was opened mid-window
+    await handleSave();
+    if (!app.dirty) {
+      toast = "saved";
+      savedTimer = setTimeout(() => {
+        if (toast === "saved") toast = "none";
+      }, 2500);
     }
   }
 
@@ -126,17 +190,6 @@
 
   function openGgdeals(game: Game) {
     openUrl(ggdealsUrl(game.title));
-  }
-
-  async function handleNew() {
-    if (app.library.games.length > 0 || app.dirty) {
-      const ok = await confirm(
-        "Start a new, empty library? The games currently loaded will be cleared, and any unsaved changes lost.",
-        { title: "New library", kind: "warning" },
-      );
-      if (!ok) return;
-    }
-    newLibrary();
   }
 
   function setSort(key: SortKey, asc: boolean) {
@@ -204,16 +257,32 @@
       <span class="path">{app.currentPath ?? "No file"}</span>
     </div>
     <div class="actions">
-      <button onclick={handleNew}>New</button>
-      <button onclick={openLibrary}>Open…</button>
+      <!-- With a file loaded, autosave replaces Save and switching files
+           moves to Settings → Library file; the header stays minimal. -->
+      {#if !app.currentPath}
+        <button onclick={openLibrary}>Open…</button>
+      {/if}
       <button onclick={() => (showAdd = true)}>+ Add</button>
-      <button class="primary" onclick={handleSave} disabled={app.busy}>Save</button>
+      {#if !app.currentPath}
+        <button class="primary" onclick={handleSave} disabled={app.busy}>Save</button>
+      {/if}
       <button onclick={() => (showSettings = true)}>Settings</button>
     </div>
   </header>
 
   {#if app.error}
-    <div class="banner error">{app.error}</div>
+    <div class="banner error">
+      {app.error}
+      <button class="dismiss" title="Dismiss" onclick={() => (app.error = null)}>×</button>
+    </div>
+  {/if}
+
+  {#if app.updateAvailable}
+    <div class="banner update">
+      Version {app.updateAvailable} is available (you have {version}).
+      <button class="get" onclick={() => openUrl(releaseUrl())}>Download ↗</button>
+      <button class="dismiss" title="Dismiss" onclick={() => (app.updateAvailable = null)}>×</button>
+    </div>
   {/if}
 
   <div class="filters">
@@ -459,6 +528,17 @@
   <GameDetails game={selectedGame} onclose={() => (selectedGame = null)} />
 {/if}
 
+{#if toast !== "none"}
+  <div class="toast" role="status">
+    {#if toast === "pending"}
+      <span>Autosaving in {undoSecs}s…</span>
+      <button class="undo" onclick={undoNow}>Undo</button>
+    {:else}
+      <span>Saved ✓</span>
+    {/if}
+  </div>
+{/if}
+
 <style>
   :global(body) {
     margin: 0;
@@ -551,6 +631,55 @@
     color: #ffb4b4;
     padding: 8px 16px;
     font-size: 13px;
+  }
+  .banner.update {
+    background: #1f2a4a;
+    color: #c7d2fe;
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .banner .get {
+    padding: 3px 10px;
+    font-size: 12px;
+  }
+  .banner .dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 16px;
+    padding: 0 4px;
+  }
+  .toast {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    z-index: 1100; /* above the modal overlays, so Undo works mid-edit */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #2c2f37;
+    border: 1px solid #3a3e48;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+  .toast .undo {
+    background: none;
+    border: none;
+    color: #aeb6ff;
+    font-weight: 700;
+    padding: 0;
+  }
+  .toast .undo:hover {
+    text-decoration: underline;
   }
   .filters {
     display: flex;

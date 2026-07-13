@@ -1,8 +1,13 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { getVersion } from "@tauri-apps/api/app";
   import {
     app,
     persistSettings,
+    openLibrary,
+    newLibrary,
+    checkForUpdate,
     syncSteamLibrary,
     gogConnect,
     syncGogLibrary,
@@ -14,8 +19,12 @@
   } from "./store.svelte";
   import { SOURCE_TOGGLES, SOURCE_TOGGLE_LABELS } from "./types";
   import { gogLoginUrl, epicLoginUrl } from "./api";
+  import { releaseUrl } from "./format";
 
   let { onclose }: { onclose: () => void } = $props();
+
+  let version = $state("");
+  getVersion().then((v) => (version = v));
 
   // Local editable copies so we only commit on Save.
   let steamApiKey = $state(app.settings.steamApiKey ?? "");
@@ -43,6 +52,40 @@
   let ignMsg = $state("");
   let ignErr = $state("");
 
+  async function openDifferentFile() {
+    const before = app.currentPath;
+    await openLibrary();
+    if (app.currentPath !== before) onclose();
+  }
+
+  async function startNewLibrary() {
+    const ok = await confirm(
+      "Start a new, empty library? The current file keeps its games; the new library isn't written anywhere until you save it.",
+      { title: "New library", kind: "warning" },
+    );
+    if (ok) {
+      newLibrary();
+      onclose();
+    }
+  }
+
+  let checkingUpdate = $state(false);
+  let updateMsg = $state("");
+  let updateErr = $state("");
+  async function checkUpdatesNow() {
+    checkingUpdate = true;
+    updateMsg = "";
+    updateErr = "";
+    try {
+      const latest = await checkForUpdate(version);
+      updateMsg = latest ? `Version ${latest} is available.` : "You're up to date.";
+    } catch (e) {
+      updateErr = String(e);
+    } finally {
+      checkingUpdate = false;
+    }
+  }
+
   async function commitFields() {
     app.settings.steamApiKey = steamApiKey.trim() || undefined;
     app.settings.steamId = steamId.trim() || undefined;
@@ -64,7 +107,7 @@
     try {
       await commitFields();
       const { added, updated } = await syncSteamLibrary();
-      steamMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+      steamMsg = `Synced: ${added} added, ${updated} updated.`;
     } catch (e) {
       steamErr = String(e);
     } finally {
@@ -97,7 +140,7 @@
     gogErr = "";
     try {
       const { added, updated } = await syncGogLibrary();
-      gogMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+      gogMsg = `Synced: ${added} added, ${updated} updated.`;
     } catch (e) {
       gogErr = String(e);
     } finally {
@@ -130,7 +173,7 @@
     epicErr = "";
     try {
       const { added, updated } = await syncEpicLibrary();
-      epicMsg = `Synced: ${added} added, ${updated} updated. Remember to Save.`;
+      epicMsg = `Synced: ${added} added, ${updated} updated.`;
     } catch (e) {
       epicErr = String(e);
     } finally {
@@ -145,7 +188,7 @@
     try {
       await commitFields();
       const { added, updated } = await syncIgnLibrary();
-      ignMsg = `Imported: ${added} added, ${updated} updated. Remember to Save.`;
+      ignMsg = `Imported: ${added} added, ${updated} updated.`;
     } catch (e) {
       ignErr = String(e);
     } finally {
@@ -163,6 +206,19 @@
 >
   <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
     <h2>Settings</h2>
+
+    <section>
+      <h3>Library file</h3>
+      {#if app.currentPath}
+        <p class="note"><span class="mono">{app.currentPath}</span></p>
+      {:else}
+        <p class="note">No file loaded — use Save in the header to create one.</p>
+      {/if}
+      <div class="row">
+        <button class="full" onclick={openDifferentFile}>Open a different file…</button>
+        <button class="full" onclick={startNewLibrary}>New empty library</button>
+      </div>
+    </section>
 
     <section>
       <h3>Sources</h3>
@@ -267,6 +323,32 @@
       {#if ignErr}<p class="err">{ignErr}</p>{/if}
     </section>
     {/if}
+
+    <section>
+      <h3>About</h3>
+      <p class="note">
+        Game Library {#if version}v{version}{/if} — tracks what you're playing, plan to play, and
+        have beaten across Steam, GOG, Epic and IGN. Your library is a single JSON file you choose,
+        so it can live on a NAS or synced folder and be shared between devices.
+      </p>
+      <div class="row">
+        <button class="full" onclick={() => openUrl("https://github.com/AsenTahchiyski/game-lib")}>
+          GitHub ↗
+        </button>
+        <button class="full" onclick={checkUpdatesNow} disabled={checkingUpdate}>
+          {checkingUpdate ? "Checking…" : "Check for updates"}
+        </button>
+      </div>
+      {#if updateMsg}
+        <p class="ok">
+          {updateMsg}
+          {#if app.updateAvailable}
+            <button onclick={() => openUrl(releaseUrl())}>Download ↗</button>
+          {/if}
+        </p>
+      {/if}
+      {#if updateErr}<p class="err">Update check failed: {updateErr}</p>{/if}
+    </section>
 
     <div class="actions">
       <button onclick={onclose}>Cancel</button>

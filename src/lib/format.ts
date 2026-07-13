@@ -77,6 +77,12 @@ export function gameRating(game: Game): number | undefined {
   return game.storeRating || game.metacritic || undefined;
 }
 
+/** Download page for this device's builds (the rolling GitHub release). */
+export function releaseUrl(): string {
+  const tag = /android/i.test(navigator.userAgent) ? "latest-android" : "latest-desktop";
+  return `https://github.com/AsenTahchiyski/game-lib/releases/tag/${tag}`;
+}
+
 export function formatDate(iso: string | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

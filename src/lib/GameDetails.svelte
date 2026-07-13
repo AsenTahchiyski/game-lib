@@ -14,6 +14,7 @@
     mergeRecords,
     sourceEnabled,
     fetchHltb,
+    setReleaseDate,
   } from "./store.svelte";
   import {
     STATUSES,
@@ -40,6 +41,8 @@
 
   let editingTitle = $state(false);
   let titleDraft = $state("");
+  let editingRelease = $state(false);
+  let releaseDraft = $state("");
   let coverDraft = $state("");
   let newTag = $state("");
   let mergeQuery = $state("");
@@ -89,6 +92,16 @@
 
   // Only history entries with a real recorded date — import artifacts are dropped.
   const datedHistory = $derived(game.statusHistory.filter((e) => !!e.at));
+
+  function startReleaseEdit() {
+    releaseDraft = game.releaseDate ?? "";
+    editingRelease = true;
+  }
+  function commitRelease() {
+    if (!editingRelease) return; // Enter already committed; ignore the blur
+    editingRelease = false;
+    setReleaseDate(game, releaseDraft);
+  }
 
   function startRename() {
     titleDraft = game.title;
@@ -147,15 +160,33 @@
             <span class="src">{src}</span>
           {/each}
         </div>
+        <!-- Column-flow grid: general facts fill the left column top-to-bottom
+             (Rating right under Metacritic), the three HLTB rows the right. -->
         <dl class="stats">
           <div><dt>Playtime</dt><dd>{formatPlaytime(game.playtimeMinutes)}</dd></div>
           <div><dt>Since</dt><dd>{formatDate(game.statusChangedAt)}</dd></div>
-          <div><dt>Released</dt><dd>{formatDate(game.releaseDate)}</dd></div>
+          <div>
+            <dt>Released</dt>
+            <dd>
+              {#if editingRelease}
+                <input
+                  class="date-edit"
+                  type="date"
+                  bind:value={releaseDraft}
+                  onkeydown={(e) => e.key === "Enter" && commitRelease()}
+                  onblur={commitRelease}
+                />
+              {:else}
+                {formatDate(game.releaseDate)}
+                <button class="edit" title="Correct the release date" onclick={startReleaseEdit}>✎</button>
+              {/if}
+            </dd>
+          </div>
+          <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
           <div>
             <dt>Rating</dt>
             <dd><RatingIcon rating={gameRating(game)} /> {gameRating(game) ?? "—"}</dd>
           </div>
-          <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
           <div><dt>HLTB Story</dt><dd>{hltbCell(game.hltb?.main)}</dd></div>
           <div><dt>HLTB + Extras</dt><dd>{hltbCell(game.hltb?.extra)}</dd></div>
           <div><dt>HLTB 100%</dt><dd>{hltbCell(game.hltb?.completionist)}</dd></div>
@@ -384,8 +415,19 @@
   .stats {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    /* Fill column-first: 5 general rows left, the 3 HLTB rows right. */
+    grid-template-rows: repeat(5, auto);
+    grid-auto-flow: column;
     gap: 4px 14px;
     margin: 12px 0 0;
+  }
+  .date-edit {
+    background: #14161a;
+    border: 1px solid #3a3e48;
+    border-radius: 5px;
+    padding: 1px 6px;
+    color: #e6e6e6;
+    font: inherit;
   }
   .stats div {
     display: flex;
@@ -582,6 +624,8 @@
     }
     .stats {
       grid-template-columns: 1fr;
+      grid-template-rows: none;
+      grid-auto-flow: row;
     }
   }
 </style>
