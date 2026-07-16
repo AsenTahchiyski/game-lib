@@ -120,6 +120,22 @@ export function addManualGame(opts: {
   };
   app.library.games.push(game);
   touch();
+  // The guessed Steam cover 404s for newly listed apps (their art only exists
+  // at a hashed CDN path), so swap in the real URL once Steam answers. Mutate
+  // the in-library proxy (not the raw `game`) so the UI reacts.
+  if (sources.steam) {
+    const appid = sources.steam.appid;
+    void api
+      .steamCoverUrl(appid)
+      .then((url) => {
+        const g = app.library.games.find((x) => x.id === game.id);
+        if (url && g && g.coverUrl === steamCover(appid)) {
+          g.coverUrl = url;
+          touch();
+        }
+      })
+      .catch(() => {});
+  }
   return game;
 }
 
@@ -167,17 +183,6 @@ export function renameGame(game: Game, title: string) {
   const t = title.trim();
   if (!t || t === game.title) return;
   game.title = t;
-  game.userEdited = true;
-  touch();
-}
-
-/** Set (or clear) the release date by hand. Marks the game user-edited so a
- *  later store sync won't put a wrong date back (Steam often reports the
- *  *Steam* release of an older game, e.g. Armed and Dangerous 2009 vs 2003). */
-export function setReleaseDate(game: Game, date: string) {
-  const d = date.trim();
-  if (d === (game.releaseDate ?? "")) return;
-  game.releaseDate = d || undefined;
   game.userEdited = true;
   touch();
 }

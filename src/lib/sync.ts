@@ -16,6 +16,7 @@ export interface SteamGame {
   storeRating?: number;
   releaseTimestamp?: number; // unix seconds
   wishlist?: boolean;
+  coverUrl?: string; // real (hashed) art URL; missing when the lookup failed
 }
 
 export interface GogGame {
@@ -180,7 +181,15 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       setSourceId(existing, store, ig.id);
       bySource.set(ig.id, existing);
       if (ig.playtimeMinutes !== undefined) existing.playtimeMinutes = ig.playtimeMinutes;
-      if (!existing.coverUrl && ig.coverUrl) existing.coverUrl = ig.coverUrl;
+      // Take the source's cover when we have none — or, on a Steam sync,
+      // upgrade a stored guessed URL (404s for newly listed apps) to the real one.
+      if (
+        ig.coverUrl &&
+        (!existing.coverUrl ||
+          (store === "steam" && existing.coverUrl.endsWith("/library_600x900.jpg")))
+      ) {
+        existing.coverUrl = ig.coverUrl;
+      }
       // A stored 0 is a legacy "no reviews" artifact, not a score — replace it.
       if (!existing.storeRating && ig.storeRating) existing.storeRating = ig.storeRating;
       if (!existing.metacritic && ig.metacritic) existing.metacritic = ig.metacritic;
@@ -291,8 +300,11 @@ export function mergeSteamGames(library: Library, games: SteamGame[]): MergeResu
       id: String(g.appid),
       title: g.name || `Steam app ${g.appid}`,
       playtimeMinutes: g.playtimeMinutes,
-      // Steam's portrait box art is derivable from the appid (no extra request).
-      coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
+      // Prefer the real art URL from the sync; the guessed path 404s for
+      // newly listed apps (their art only exists under a hashed path).
+      coverUrl:
+        g.coverUrl ??
+        `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_600x900.jpg`,
       storeRating: g.storeRating,
       metacritic: g.metacritic,
       releaseDate: g.releaseTimestamp

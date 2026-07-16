@@ -14,7 +14,6 @@
     mergeRecords,
     sourceEnabled,
     fetchHltb,
-    setReleaseDate,
   } from "./store.svelte";
   import {
     STATUSES,
@@ -41,8 +40,6 @@
 
   let editingTitle = $state(false);
   let titleDraft = $state("");
-  let editingRelease = $state(false);
-  let releaseDraft = $state("");
   let coverDraft = $state("");
   let newTag = $state("");
   let mergeQuery = $state("");
@@ -93,16 +90,6 @@
   // Only history entries with a real recorded date — import artifacts are dropped.
   const datedHistory = $derived(game.statusHistory.filter((e) => !!e.at));
 
-  function startReleaseEdit() {
-    releaseDraft = game.releaseDate ?? "";
-    editingRelease = true;
-  }
-  function commitRelease() {
-    if (!editingRelease) return; // Enter already committed; ignore the blur
-    editingRelease = false;
-    setReleaseDate(game, releaseDraft);
-  }
-
   function startRename() {
     titleDraft = game.title;
     editingTitle = true;
@@ -131,11 +118,15 @@
     <div class="head">
       <div class="cover">
         {#if game.coverUrl}
-          <img
-            src={game.coverUrl}
-            alt=""
-            onerror={coverFallback}
-          />
+          <!-- Keyed so a new URL gets a fresh <img> — coverFallback may have
+               hidden or re-pointed the old element. -->
+          {#key game.coverUrl}
+            <img
+              src={game.coverUrl}
+              alt=""
+              onerror={coverFallback}
+            />
+          {/key}
         {/if}
       </div>
       <div class="head-info">
@@ -165,23 +156,7 @@
         <dl class="stats">
           <div><dt>Playtime</dt><dd>{formatPlaytime(game.playtimeMinutes)}</dd></div>
           <div><dt>Since</dt><dd>{formatDate(game.statusChangedAt)}</dd></div>
-          <div>
-            <dt>Released</dt>
-            <dd>
-              {#if editingRelease}
-                <input
-                  class="date-edit"
-                  type="date"
-                  bind:value={releaseDraft}
-                  onkeydown={(e) => e.key === "Enter" && commitRelease()}
-                  onblur={commitRelease}
-                />
-              {:else}
-                {formatDate(game.releaseDate)}
-                <button class="edit" title="Correct the release date" onclick={startReleaseEdit}>✎</button>
-              {/if}
-            </dd>
-          </div>
+          <div><dt>Released</dt><dd>{formatDate(game.releaseDate)}</dd></div>
           <div><dt>Metacritic</dt><dd>{game.metacritic ?? "—"}</dd></div>
           <div>
             <dt>Rating</dt>
@@ -331,6 +306,7 @@
   }
   .head-info {
     min-width: 0;
+    flex: 1;
   }
   h2 {
     margin: 0 0 8px;
@@ -398,8 +374,11 @@
     cursor: pointer;
   }
   h3 {
-    margin: 18px 0 8px;
-    font-size: 13px;
+    margin: 22px 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
     color: #8b909a;
   }
   .sources .src {
@@ -418,30 +397,28 @@
     /* Fill column-first: 5 general rows left, the 3 HLTB rows right. */
     grid-template-rows: repeat(5, auto);
     grid-auto-flow: column;
-    gap: 4px 14px;
+    gap: 6px 28px;
     margin: 12px 0 0;
-  }
-  .date-edit {
-    background: #14161a;
-    border: 1px solid #3a3e48;
-    border-radius: 5px;
-    padding: 1px 6px;
-    color: #e6e6e6;
-    font: inherit;
   }
   .stats div {
     display: flex;
-    justify-content: space-between;
-    gap: 16px;
+    align-items: center;
+    gap: 10px;
     font-size: 13px;
   }
   .stats dt {
     color: #8b909a;
     white-space: nowrap;
+    flex: none;
+    width: 92px;
   }
   .stats dd {
     margin: 0;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
   }
   .chips {
     display: flex;

@@ -355,12 +355,14 @@
           <div class="card">
             <button class="card-cover coverbtn" onclick={() => (selectedGame = game)}>
               {#if game.coverUrl}
-                <img
-                  src={game.coverUrl}
-                  alt=""
-                  loading="lazy"
-                  onerror={coverFallback}
-                />
+                {#key game.coverUrl}
+                  <img
+                    src={game.coverUrl}
+                    alt=""
+                    loading="lazy"
+                    onerror={coverFallback}
+                  />
+                {/key}
               {/if}
               {#if gameRating(game) !== undefined}
                 <span class="card-rating"><RatingIcon rating={gameRating(game)} /></span>
@@ -479,12 +481,14 @@
                 <div class="title-cell">
                   <button class="cover coverbtn" onclick={() => (selectedGame = game)}>
                     {#if game.coverUrl}
-                      <img
-                        src={game.coverUrl}
-                        alt=""
-                        loading="lazy"
-                        onerror={coverFallback}
-                      />
+                      {#key game.coverUrl}
+                        <img
+                          src={game.coverUrl}
+                          alt=""
+                          loading="lazy"
+                          onerror={coverFallback}
+                        />
+                      {/key}
                     {/if}
                   </button>
                   <button class="title-link" onclick={() => (selectedGame = game)}>{game.title}</button>

@@ -16,6 +16,7 @@ pub fn run() {
             commands::save_settings,
             commands::latest_version,
             steam::sync_steam,
+            steam::steam_cover_url,
             gog::gog_login_url,
             gog::gog_exchange_code,
             gog::gog_sync,

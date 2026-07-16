@@ -53,6 +53,10 @@ export const saveSettings = (settings: Settings) =>
 export const syncSteam = (apiKey: string, steamId: string) =>
   invoke<SteamGame[]>("sync_steam", { apiKey, steamId });
 
+/** Real cover art URL for one Steam app (hashed CDN path); null if it has none. */
+export const steamCoverUrl = (appid: number) =>
+  invoke<string | null>("steam_cover_url", { appid });
+
 export const gogLoginUrl = () => invoke<string>("gog_login_url");
 
 export const gogExchangeCode = (code: string) =>

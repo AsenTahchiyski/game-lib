@@ -33,6 +33,23 @@ pub struct SteamGame {
     pub store_rating: Option<u32>, // 0-100, Steam review % positive
     pub release_timestamp: Option<i64>, // unix seconds; the frontend turns it into a date
     pub wishlist: bool,            // true => from the wishlist, not owned
+    pub cover_url: Option<String>, // real (hashed) art URL from GetItems
+}
+
+/// Full CDN URL for an app's cover from a GetItems `assets` object. Newly
+/// listed apps have no art at the guessable `steam/apps/{appid}/…` path — it
+/// only exists under the hashed path reported here. Prefers the portrait
+/// library capsule, falls back to the header.
+fn asset_cover_url(assets: &serde_json::Value) -> Option<String> {
+    let url_format = assets.get("asset_url_format")?.as_str()?;
+    let file = assets
+        .get("library_capsule")
+        .or_else(|| assets.get("header"))?
+        .as_str()?;
+    Some(format!(
+        "https://shared.cloudflare.steamstatic.com/store_item_assets/{}",
+        url_format.replace("${FILENAME}", file)
+    ))
 }
 
 /// Appids on the user's Steam wishlist via the official IWishlistService. Public
@@ -66,6 +83,7 @@ struct StoreItem {
     name: Option<String>,
     percent_positive: Option<u32>,
     release_timestamp: Option<i64>,
+    cover_url: Option<String>,
 }
 
 /// Names, review % and release dates via IStoreBrowseService/GetItems — one
@@ -82,7 +100,7 @@ async fn fetch_store_items(
         let input = serde_json::json!({
             "ids": ids,
             "context": { "language": "english", "country_code": "US", "steam_realm": 1 },
-            "data_request": { "include_release": true, "include_reviews": true },
+            "data_request": { "include_release": true, "include_reviews": true, "include_assets": true },
         });
         let resp = match client
             .get("https://api.steampowered.com/IStoreBrowseService/GetItems/v1/")
@@ -119,6 +137,7 @@ async fn fetch_store_items(
                         .pointer("/release/steam_release_date")
                         .and_then(|t| t.as_i64())
                         .filter(|&t| t > 0),
+                    cover_url: it.get("assets").and_then(asset_cover_url),
                 },
             );
         }
@@ -223,6 +242,7 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             store_rating: None,
             release_timestamp: None,
             wishlist: false,
+            cover_url: None,
         })
         .collect();
 
@@ -247,6 +267,7 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
         if let Some(it) = items.get(&g.appid) {
             g.store_rating = it.percent_positive;
             g.release_timestamp = it.release_timestamp;
+            g.cover_url = it.cover_url.clone();
         }
     }
     for appid in wishlist {
@@ -261,6 +282,7 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
             store_rating: it.and_then(|i| i.percent_positive),
             release_timestamp: it.and_then(|i| i.release_timestamp),
             wishlist: true,
+            cover_url: it.and_then(|i| i.cover_url.clone()),
         });
     }
 
@@ -272,4 +294,27 @@ pub async fn sync_steam(api_key: String, steam_id: String) -> Result<Vec<SteamGa
     }
 
     Ok(games)
+}
+
+/// The real cover art URL for one app (see `asset_cover_url`), for manually
+/// added games. None when the app has no art.
+#[tauri::command]
+pub async fn steam_cover_url(appid: u32) -> Result<Option<String>, String> {
+    let input = serde_json::json!({
+        "ids": [{ "appid": appid }],
+        "context": { "language": "english", "country_code": "US", "steam_realm": 1 },
+        "data_request": { "include_assets": true },
+    });
+    let resp = reqwest::Client::new()
+        .get("https://api.steampowered.com/IStoreBrowseService/GetItems/v1/")
+        .query(&[("input_json", input.to_string())])
+        .send()
+        .await
+        .map_err(|e| format!("Steam request failed: {e}"))?;
+    let v: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Could not parse Steam's response ({e})."))?;
+    Ok(v.pointer("/response/store_items/0/assets")
+        .and_then(asset_cover_url))
 }
