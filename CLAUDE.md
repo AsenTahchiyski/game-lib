@@ -10,11 +10,13 @@ A cross-platform game library **status** manager (Tauri 2 + SvelteKit + TypeScri
 
 ```sh
 npm ci
-npm run check        # svelte-check type-check — the primary local verification
+npm run check        # svelte-check type-check
+npm run build        # vite build — run this too before pushing (see below)
 npm run tauri dev    # run the desktop app (needs Tauri system deps)
 ```
 
-- **Do not attempt the full Tauri/Rust build locally** — the dev container is too small. All native builds run in GitHub Actions (`.github/workflows/build.yml` desktop, `android.yml` Android). The local feedback loop is `npm run check`; for Rust changes, rely on CI.
+- **Run both `check` and `build`.** They catch different things and `check` alone will let a broken build reach CI. `svelte-check` uses the TS language service and never touches the build pipeline; `vite build` is what actually compiles `.svelte` files. Notably `preprocess: vitePreprocess()` does *not* run esbuild on `<script lang="ts">` — Svelte 5 strips the types itself, and its stripping rejects some valid TS (optional parameters, `code?: string`, emit a `?` into the output that rollup then fails to parse). That combination type-checks cleanly and fails the build.
+- **Do not attempt the full Tauri/Rust build locally** — the dev container is too small. All native builds run in GitHub Actions (`.github/workflows/build.yml` desktop, `android.yml` Android). For Rust changes, rely on CI. Note that a frontend build failure fails the workflow *before* Rust compiles, so a green frontend is a prerequisite for learning anything about the Rust.
 - There is no test suite.
 
 ## Releasing

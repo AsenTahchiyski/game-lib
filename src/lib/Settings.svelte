@@ -120,12 +120,12 @@
   }
 
   /** No code = log in through the embedded window; a code = the manual path. */
-  async function connectGog(code?: string) {
+  async function connectGog(code = "") {
     gogBusy = true;
     gogMsg = "";
     gogErr = "";
     try {
-      await gogConnect(code);
+      await gogConnect(code || undefined);
       gogCode = "";
       gogMsg = "GOG connected. You can sync now.";
     } catch (e) {
@@ -153,12 +153,12 @@
     await openUrl(await epicLoginUrl());
   }
 
-  async function connectEpic(code?: string) {
+  async function connectEpic(code = "") {
     epicBusy = true;
     epicMsg = "";
     epicErr = "";
     try {
-      await epicConnect(code);
+      await epicConnect(code || undefined);
       epicCode = "";
       epicMsg = "Epic connected. You can sync now.";
     } catch (e) {
