@@ -126,6 +126,7 @@ export interface Settings {
   epicRefreshToken?: string;
   ignNickname?: string;
   lastLibraryPath?: string;
+  viewMode?: "list" | "grid";
   // Sources the user toggled OFF in Settings (default: all enabled). Stored as
   // a deny-list so newly added sources default to on.
   disabledSources?: SourceToggle[];

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,34 @@ const TOKEN_URL: &str =
     "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token";
 const ASSETS_URL: &str =
     "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows?label=Live";
+
+// The real Epic launcher's User-Agent. The assets host sits behind Cloudflare
+// (unlike the account host), which is unfriendly to clients sending none.
+const USER_AGENT: &str =
+    "UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
+
+/// Flatten an error's source chain. reqwest's own Display stops at "error
+/// sending request for url (…)" and drops the part that says *why* — DNS
+/// failure, TLS reset, timeout — which is the only useful half.
+fn cause(e: &dyn std::error::Error) -> String {
+    let mut msg = e.to_string();
+    let mut source = e.source();
+    while let Some(e) = source {
+        msg.push_str(": ");
+        msg.push_str(&e.to_string());
+        source = e.source();
+    }
+    msg
+}
+
+fn client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Could not build the Epic HTTP client: {}", cause(&e)))
+}
 
 #[derive(Deserialize)]
 struct TokenResponse {
@@ -89,13 +118,13 @@ pub fn epic_login_url() -> String {
 }
 
 async fn fetch_token(form: &[(&str, &str)]) -> Result<TokenResponse, String> {
-    let resp = reqwest::Client::new()
+    let resp = client()?
         .post(TOKEN_URL)
         .basic_auth(CLIENT_ID, Some(CLIENT_SECRET))
         .form(form)
         .send()
         .await
-        .map_err(|e| format!("Epic token request failed: {e}"))?;
+        .map_err(|e| format!("Epic token request failed: {}", cause(&e)))?;
     if !resp.status().is_success() {
         return Err(format!(
             "Epic token request returned HTTP {} — the code may be wrong or expired.",
@@ -119,6 +148,64 @@ pub async fn epic_exchange_code(code: String) -> Result<String, String> {
     Ok(token.refresh_token)
 }
 
+// Fake host the injected script navigates to in order to hand the code back.
+// The navigation is always cancelled, so it never resolves.
+const CALLBACK_HOST: &str = "gamelib.invalid";
+
+/// Script injected into every page of the Epic login window.
+///
+/// Epic never puts the authorization code in a URL — it's only ever the body of
+/// an API response. So once login has set a session cookie, poll that endpoint
+/// same-origin (cookies included) and smuggle the code out through a navigation
+/// to `CALLBACK_HOST`. Polling rather than reacting to the redirect keeps this
+/// working on Android, where the JSON page may be downloaded instead of shown.
+fn login_script() -> String {
+    format!(
+        r#"(function () {{
+  if (!/(^|\.)epicgames\.com$/.test(location.hostname)) return;
+  setInterval(function () {{
+    fetch("/id/api/redirect?clientId={CLIENT_ID}&responseType=code", {{ credentials: "include" }})
+      .then(function (r) {{ return r.json(); }})
+      .then(function (d) {{
+        if (d && d.authorizationCode) {{
+          location.href = "https://{CALLBACK_HOST}/?code=" + encodeURIComponent(d.authorizationCode);
+        }}
+      }})
+      .catch(function () {{}});
+  }}, 2000);
+}})();"#
+    )
+}
+
+/// Log in through an embedded window and return the refresh token.
+#[tauri::command]
+pub async fn epic_login(app: tauri::AppHandle) -> Result<String, String> {
+    let code = crate::login::capture_code(
+        &app,
+        "epic-login",
+        "Log in to Epic",
+        &epic_login_url(),
+        &login_script(),
+        |url| {
+            if url.host_str() == Some(CALLBACK_HOST) {
+                return match crate::login::query_param(url, "code") {
+                    Some(code) => crate::login::Nav::Code(code),
+                    None => crate::login::Nav::Allow,
+                };
+            }
+            // Epic's own post-login redirect serves raw JSON; letting it load
+            // would trigger a download prompt on Android. The poll above has
+            // the code covered, so keep it from ever rendering.
+            if url.path().starts_with("/id/api/redirect") {
+                return crate::login::Nav::Block;
+            }
+            crate::login::Nav::Allow
+        },
+    )
+    .await?;
+    epic_exchange_code(code).await
+}
+
 /// Refresh the access token, list owned assets, then resolve titles via the
 /// catalog service, keeping only items categorised as games.
 #[tauri::command]
@@ -130,7 +217,7 @@ pub async fn epic_sync(refresh_token: String) -> Result<EpicSyncResult, String> 
     ])
     .await?;
 
-    let client = reqwest::Client::new();
+    let client = client()?;
 
     // 1. Owned assets (every namespace/item the account owns).
     let assets: Vec<Asset> = client
@@ -138,10 +225,10 @@ pub async fn epic_sync(refresh_token: String) -> Result<EpicSyncResult, String> 
         .bearer_auth(&token.access_token)
         .send()
         .await
-        .map_err(|e| format!("Epic assets request failed: {e}"))?
+        .map_err(|e| format!("Epic assets request failed: {}", cause(&e)))?
         .json()
         .await
-        .map_err(|e| format!("Could not parse Epic assets: {e}"))?;
+        .map_err(|e| format!("Could not parse Epic assets: {}", cause(&e)))?;
 
     // 2. Group catalog item ids by namespace, skipping Unreal Engine content.
     let mut by_namespace: HashMap<String, Vec<String>> = HashMap::new();
@@ -172,7 +259,7 @@ pub async fn epic_sync(refresh_token: String) -> Result<EpicSyncResult, String> 
             .bearer_auth(&token.access_token)
             .send()
             .await
-            .map_err(|e| format!("Epic catalog request failed: {e}"))?;
+            .map_err(|e| format!("Epic catalog request failed: {}", cause(&e)))?;
         if !resp.status().is_success() {
             // Skip a namespace we can't resolve rather than failing the whole sync.
             continue;

@@ -33,7 +33,7 @@
     <label>
       Title
       <!-- svelte-ignore a11y_autofocus -->
-      <input bind:value={title} placeholder="e.g. Hollow Knight: Silksong" autofocus
+      <input bind:value={title} placeholder="e.g. Cyberpunk 2077" autofocus
         onkeydown={(e) => e.key === "Enter" && add()} />
     </label>
     <label>
@@ -56,7 +56,7 @@
     {#if store}
       <label>
         {store === "steam" ? "Steam App ID" : "Store ID"}
-        <input bind:value={storeId} placeholder={store === "steam" ? "e.g. 1030300 — adds cover" : "store product id"}
+        <input bind:value={storeId} placeholder={store === "steam" ? "e.g. 1091500 — adds cover" : "store product id"}
           inputmode={store === "steam" ? "numeric" : "text"} />
       </label>
     {/if}

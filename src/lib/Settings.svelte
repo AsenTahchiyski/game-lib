@@ -119,12 +119,13 @@
     await openUrl(await gogLoginUrl());
   }
 
-  async function connectGog() {
+  /** No code = log in through the embedded window; a code = the manual path. */
+  async function connectGog(code?: string) {
     gogBusy = true;
     gogMsg = "";
     gogErr = "";
     try {
-      await gogConnect(gogCode);
+      await gogConnect(code);
       gogCode = "";
       gogMsg = "GOG connected. You can sync now.";
     } catch (e) {
@@ -152,12 +153,12 @@
     await openUrl(await epicLoginUrl());
   }
 
-  async function connectEpic() {
+  async function connectEpic(code?: string) {
     epicBusy = true;
     epicMsg = "";
     epicErr = "";
     try {
-      await epicConnect(epicCode);
+      await epicConnect(code);
       epicCode = "";
       epicMsg = "Epic connected. You can sync now.";
     } catch (e) {
@@ -265,15 +266,25 @@
     <section>
       <h3>GOG {#if gogConnected}<span class="badge">connected</span>{/if}</h3>
       <p class="note">
-        Log in once in your browser, then copy the <span class="mono">code</span> value from the
-        address bar after login (the page URL ends with <span class="mono">?…&code=XXXX</span>) and
-        paste it below. Only the resulting token is stored, on this device.
+        Log in once in the window that opens; the app picks up the rest itself. Only the resulting
+        token is stored, on this device.
       </p>
-      <button class="full" onclick={openGogLogin}>Open GOG login in browser</button>
-      <div class="row">
-        <input bind:value={gogCode} placeholder="Paste GOG code here" />
-        <button onclick={connectGog} disabled={gogBusy || !gogCode}>Connect</button>
-      </div>
+      <button class="full" onclick={() => connectGog()} disabled={gogBusy}>
+        {gogConnected ? "Log in to GOG again" : "Log in to GOG"}
+      </button>
+      <details>
+        <summary>Enter a code manually</summary>
+        <p class="note">
+          If the login window doesn't work, log in in your browser instead and copy the
+          <span class="mono">code</span> value from the address bar afterwards (the page URL ends
+          with <span class="mono">?…&code=XXXX</span>).
+        </p>
+        <button class="full" onclick={openGogLogin}>Open GOG login in browser</button>
+        <div class="row">
+          <input bind:value={gogCode} placeholder="Paste GOG code here" />
+          <button onclick={() => connectGog(gogCode)} disabled={gogBusy || !gogCode}>Connect</button>
+        </div>
+      </details>
       <button class="full" onclick={syncGogNow} disabled={gogBusy || !gogConnected}>
         {gogBusy ? "Working…" : "Sync GOG library now"}
       </button>
@@ -286,15 +297,26 @@
     <section>
       <h3>Epic {#if epicConnected}<span class="badge">connected</span>{/if}</h3>
       <p class="note">
-        Log in once in your browser. Epic then shows a page of JSON containing an
-        <span class="mono">authorizationCode</span> — copy that value and paste it below. Only the
-        resulting token is stored, on this device.
+        Log in once in the window that opens; the app picks up the rest itself. Only the resulting
+        token is stored, on this device.
       </p>
-      <button class="full" onclick={openEpicLogin}>Open Epic login in browser</button>
-      <div class="row">
-        <input bind:value={epicCode} placeholder="Paste Epic authorizationCode" />
-        <button onclick={connectEpic} disabled={epicBusy || !epicCode}>Connect</button>
-      </div>
+      <button class="full" onclick={() => connectEpic()} disabled={epicBusy}>
+        {epicConnected ? "Log in to Epic again" : "Log in to Epic"}
+      </button>
+      <details>
+        <summary>Enter a code manually</summary>
+        <p class="note">
+          If the login window doesn't work, log in in your browser instead. Epic then shows a page
+          of JSON containing an <span class="mono">authorizationCode</span> — copy that value here.
+        </p>
+        <button class="full" onclick={openEpicLogin}>Open Epic login in browser</button>
+        <div class="row">
+          <input bind:value={epicCode} placeholder="Paste Epic authorizationCode" />
+          <button onclick={() => connectEpic(epicCode)} disabled={epicBusy || !epicCode}>
+            Connect
+          </button>
+        </div>
+      </details>
       <button class="full" onclick={syncEpicNow} disabled={epicBusy || !epicConnected}>
         {epicBusy ? "Working…" : "Sync Epic library now"}
       </button>
@@ -449,6 +471,17 @@
   }
   .row input {
     margin-top: 0;
+  }
+  details {
+    margin-top: 8px;
+  }
+  summary {
+    font-size: 12px;
+    color: #8b909a;
+    cursor: pointer;
+  }
+  details .note {
+    margin-top: 8px;
   }
   .actions {
     display: flex;

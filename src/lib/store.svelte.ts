@@ -215,6 +215,12 @@ export function toggleSourceEnabled(id: SourceToggle) {
   void persistSettings();
 }
 
+/** Remember the list/grid choice — device config, like the source toggles. */
+export function setViewMode(mode: NonNullable<Settings["viewMode"]>) {
+  app.settings.viewMode = mode;
+  void persistSettings();
+}
+
 /**
  * A game is hidden when every source it came from is toggled off. Manual
  * entries (no sources) are always visible.
@@ -326,13 +332,15 @@ export async function syncSteamLibrary(): Promise<MergeResult> {
   }
 }
 
-/** Exchange a pasted GOG auth code for a refresh token and store it. */
-export async function gogConnect(code: string): Promise<void> {
+/** Connect GOG and store the refresh token. With no `code`, logs in through an
+ *  embedded window (which fetches one itself); with one, uses the pasted code. */
+export async function gogConnect(code?: string): Promise<void> {
   app.busy = true;
   app.error = null;
   try {
-    const refreshToken = await api.gogExchangeCode(code);
-    app.settings.gogRefreshToken = refreshToken;
+    app.settings.gogRefreshToken = code
+      ? await api.gogExchangeCode(code)
+      : await api.gogLogin();
     await persistSettings();
   } finally {
     app.busy = false;
@@ -360,13 +368,14 @@ export async function syncGogLibrary(): Promise<MergeResult> {
   }
 }
 
-/** Exchange a pasted Epic auth code for a refresh token and store it. */
-export async function epicConnect(code: string): Promise<void> {
+/** Connect Epic and store the refresh token. See `gogConnect` for `code`. */
+export async function epicConnect(code?: string): Promise<void> {
   app.busy = true;
   app.error = null;
   try {
-    const refreshToken = await api.epicExchangeCode(code);
-    app.settings.epicRefreshToken = refreshToken;
+    app.settings.epicRefreshToken = code
+      ? await api.epicExchangeCode(code)
+      : await api.epicLogin();
     await persistSettings();
   } finally {
     app.busy = false;

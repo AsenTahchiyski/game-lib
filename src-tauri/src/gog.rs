@@ -73,6 +73,31 @@ pub async fn gog_exchange_code(code: String) -> Result<String, String> {
     Ok(token.refresh_token)
 }
 
+/// Log in through an embedded window and return the refresh token. GOG puts the
+/// code straight into the redirect URL, so intercepting that navigation is all
+/// it takes — no page scraping, no injected script.
+#[tauri::command]
+pub async fn gog_login(app: tauri::AppHandle) -> Result<String, String> {
+    let code = crate::login::capture_code(
+        &app,
+        "gog-login",
+        "Log in to GOG",
+        &gog_login_url(),
+        "",
+        |url| {
+            if url.host_str() != Some("embed.gog.com") || url.path() != "/on_login_success" {
+                return crate::login::Nav::Allow;
+            }
+            match crate::login::query_param(url, "code") {
+                Some(code) => crate::login::Nav::Code(code),
+                None => crate::login::Nav::Allow,
+            }
+        },
+    )
+    .await?;
+    gog_exchange_code(code).await
+}
+
 #[derive(Deserialize)]
 struct FilteredProducts {
     #[serde(rename = "totalPages")]

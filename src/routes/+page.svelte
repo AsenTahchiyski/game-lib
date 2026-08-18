@@ -15,6 +15,7 @@
     availableTags,
     sourceEnabled,
     gameVisible,
+    setViewMode,
   } from "$lib/store.svelte";
   import { STATUSES, STATUS_LABELS, TAG_LABELS, type Tag, type Status, type Game } from "$lib/types";
   import { formatPlaytime, formatDate, allkeyshopUrl, ggdealsUrl, gameRating, releaseUrl } from "$lib/format";
@@ -37,7 +38,7 @@
 
   let search = $state("");
   let statusFilter = $state<Status | "all">("all");
-  let viewMode = $state<"list" | "grid">("list");
+  const viewMode = $derived(app.settings.viewMode ?? "list");
   let coverScale = $state(1);
   let sortKey = $state<SortKey>("title");
   let sortAsc = $state(true);
@@ -330,10 +331,10 @@
       </div>
     {/if}
     <div class="view-toggle">
-      <button class:active={viewMode === "list"} title="List view" onclick={() => (viewMode = "list")}>
+      <button class:active={viewMode === "list"} title="List view" onclick={() => setViewMode("list")}>
         ☰
       </button>
-      <button class:active={viewMode === "grid"} title="Grid view" onclick={() => (viewMode = "grid")}>
+      <button class:active={viewMode === "grid"} title="Grid view" onclick={() => setViewMode("grid")}>
         ▦
       </button>
     </div>

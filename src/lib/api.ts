@@ -59,6 +59,9 @@ export const steamCoverUrl = (appid: number) =>
 
 export const gogLoginUrl = () => invoke<string>("gog_login_url");
 
+/** Log in via an embedded window; resolves with the refresh token. */
+export const gogLogin = () => invoke<string>("gog_login");
+
 export const gogExchangeCode = (code: string) =>
   invoke<string>("gog_exchange_code", { code });
 
@@ -66,6 +69,9 @@ export const gogSync = (refreshToken: string) =>
   invoke<GogSyncResult>("gog_sync", { refreshToken });
 
 export const epicLoginUrl = () => invoke<string>("epic_login_url");
+
+/** Log in via an embedded window; resolves with the refresh token. */
+export const epicLogin = () => invoke<string>("epic_login");
 
 export const epicExchangeCode = (code: string) =>
   invoke<string>("epic_exchange_code", { code });
