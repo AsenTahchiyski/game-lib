@@ -68,6 +68,7 @@ export function setStatus(game: Game, status: Status) {
   game.statusChangedAt = at;
   game.statusHistory.push({ status, at });
   game.userEdited = true;
+  delete game.unreviewed;
   touch();
 }
 
@@ -91,11 +92,12 @@ export function addManualGame(opts: {
   status?: Status;
   store?: StoreId;
   storeId?: string;
+  coverUrl?: string;
 }): Game {
   const now = new Date().toISOString();
   const status = opts.status ?? "wishlist";
   const sources: Game["sources"] = {};
-  let coverUrl: string | undefined;
+  let coverUrl = opts.coverUrl;
   if (opts.store && opts.storeId) {
     if (opts.store === "steam") {
       const appid = parseInt(opts.storeId, 10);
@@ -137,6 +139,39 @@ export function addManualGame(opts: {
       .catch(() => {});
   }
   return game;
+}
+
+/** Whether a search hit is already in the library — by its store id, or by
+ *  normalized title (the same game held from another store). */
+export function inLibrary(result: api.SearchResult): boolean {
+  const norm = normalizeTitle(result.title);
+  return app.library.games.some((g) => {
+    const sid =
+      result.store === "steam" ? g.sources.steam && String(g.sources.steam.appid) : g.sources[result.store]?.id;
+    return sid === result.id || (!!norm && normalizeTitle(g.title) === norm);
+  });
+}
+
+/** Add the picked search hits as new games, all with the given status. */
+export function addSearchResults(results: api.SearchResult[], status: Status) {
+  for (const r of results) {
+    addManualGame({
+      title: r.title,
+      status,
+      store: r.store,
+      storeId: r.id,
+      // Steam's search thumbnail is a wide capsule; addManualGame derives
+      // the portrait cover from the appid instead.
+      coverUrl: r.store === "steam" ? undefined : r.coverUrl,
+    });
+  }
+}
+
+/** Settle a sync-added game's status (the per-game review of new arrivals). */
+export function reviewGame(game: Game, status: Status) {
+  setStatus(game, status);
+  delete game.unreviewed;
+  touch();
 }
 
 /** Merge `other` into `target` (manual de-dup) and drop `other`. */

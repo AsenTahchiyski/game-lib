@@ -4,6 +4,7 @@ mod gog;
 mod hltb;
 mod ign;
 mod login;
+mod search;
 mod steam;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -28,6 +29,7 @@ pub fn run() {
             epic::epic_sync,
             ign::ign_sync,
             hltb::hltb_search,
+            search::store_search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

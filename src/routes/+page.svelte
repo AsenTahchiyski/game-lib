@@ -22,6 +22,7 @@
   import Settings from "$lib/Settings.svelte";
   import GameDetails from "$lib/GameDetails.svelte";
   import AddGame from "$lib/AddGame.svelte";
+  import ReviewNew from "$lib/ReviewNew.svelte";
   import StoreIcon from "$lib/StoreIcon.svelte";
   import RatingIcon from "$lib/RatingIcon.svelte";
   import { coverFallback } from "$lib/cover";
@@ -48,6 +49,7 @@
   let tagFilter = $state(new Set<string>());
   let showSettings = $state(false);
   let showAdd = $state(false);
+  let showReview = $state(false);
   let selectedGame = $state<Game | null>(null);
   let version = $state("");
 
@@ -93,6 +95,9 @@
     const dir = sortAsc ? 1 : -1;
     return list.sort((a, b) => dir * compareBy(a, b, sortKey));
   });
+
+  // Sync-added games still waiting for a per-game status pick.
+  const unreviewedCount = $derived(visibleGames.filter((g) => g.unreviewed).length);
 
   // Count of games per status, for the filter chips.
   const counts = $derived.by(() => {
@@ -283,6 +288,13 @@
       Version {app.updateAvailable} is available (you have {version}).
       <button class="get" onclick={() => openUrl(releaseUrl())}>Download ↗</button>
       <button class="dismiss" title="Dismiss" onclick={() => (app.updateAvailable = null)}>×</button>
+    </div>
+  {/if}
+
+  {#if unreviewedCount > 0}
+    <div class="banner update">
+      {unreviewedCount} new {unreviewedCount === 1 ? "game" : "games"} from syncs — pick their status.
+      <button class="get" onclick={() => (showReview = true)}>Review</button>
     </div>
   {/if}
 
@@ -527,6 +539,10 @@
 
 {#if showAdd}
   <AddGame onclose={() => (showAdd = false)} />
+{/if}
+
+{#if showReview}
+  <ReviewNew onclose={() => (showReview = false)} />
 {/if}
 
 {#if selectedGame}

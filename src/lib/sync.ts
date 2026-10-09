@@ -2,9 +2,10 @@
 //  - Match an incoming game to an existing one first by this store's source id,
 //    then by normalized title (so a game owned on Steam *and* listed in IGN
 //    becomes ONE entry carrying both source ids, not two duplicates).
-//  - Never overwrite a user-set status from an ownership-only sync; new items
-//    default to backlog. IGN is special: it carries the curated status, so it
-//    seeds/updates status.
+//  - Never change the status of a game already in the library — the local
+//    status always wins. A source's status (IGN's curated one, Steam's
+//    wishlist flag) only seeds games the sync adds; those default to backlog
+//    and are flagged `unreviewed` so the user can pick each one's status.
 // Mutates the passed library in place.
 import type { Game, Library, Status, StoreId } from "./types";
 
@@ -197,13 +198,6 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
       // corrected it by hand (Steam reports the *Steam* release of older
       // games, which can be years off the original date).
       if (ig.releaseDate && !existing.userEdited) existing.releaseDate = ig.releaseDate;
-      // Only the curated source (IGN) updates an existing status, and never
-      // over a status the user set themselves.
-      if (store === "ign" && ig.status && existing.status !== ig.status && !existing.userEdited) {
-        existing.status = ig.status;
-        existing.statusChangedAt = now;
-        existing.statusHistory.push({ status: ig.status, at: now });
-      }
       existing.lastSyncedAt = now;
       updated++;
     } else {
@@ -224,6 +218,7 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
         releaseDate: ig.releaseDate,
         addedAt: now,
         lastSyncedAt: now,
+        unreviewed: true,
       };
       setSourceId(game, store, ig.id);
       library.games.push(game);
@@ -241,15 +236,23 @@ function mergeGames(library: Library, store: StoreId, games: Incoming[]): MergeR
 // different edition.
 export function mergeDuplicate(target: Game, dup: Game): void {
   Object.assign(target.sources, dup.sources);
-  // Keep the most meaningful status: a user edit wins, then IGN's curated
-  // status, then any non-default over a plain "backlog".
+  // Keep the most meaningful status: one the user set (the most recent, if
+  // both were), then IGN's curated status, then any non-default over a plain
+  // "backlog". A synced status must never beat a user-set one.
   const score = (g: Game) =>
     (g.userEdited ? 4 : 0) + (g.sources.ign ? 2 : 0) + (g.status !== "backlog" ? 1 : 0);
-  if (score(dup) > score(target)) {
+  const dupWins =
+    target.userEdited && dup.userEdited
+      ? (dup.statusChangedAt ?? "") > (target.statusChangedAt ?? "")
+      : target.userEdited || dup.userEdited
+        ? !!dup.userEdited
+        : score(dup) > score(target);
+  if (dupWins) {
     target.status = dup.status;
     target.statusChangedAt = dup.statusChangedAt;
   }
   target.userEdited = target.userEdited || dup.userEdited;
+  if (!dup.unreviewed) delete target.unreviewed;
   if (target.playtimeMinutes === undefined) {
     target.playtimeMinutes = dup.playtimeMinutes;
   } else if (dup.playtimeMinutes !== undefined) {

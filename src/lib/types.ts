@@ -105,6 +105,7 @@ export interface Game {
   hltb?: HltbTimes; // HowLongToBeat times; undefined = never fetched
   tags?: string[]; // orthogonal labels, e.g. "coop", "casual"
   userEdited?: boolean; // user changed status/title/etc — protect from sync overwrite
+  unreviewed?: true; // added by a sync; the user hasn't picked its status yet
   addedAt: string; // ISO-8601
   lastSyncedAt?: string; // ISO-8601
 }

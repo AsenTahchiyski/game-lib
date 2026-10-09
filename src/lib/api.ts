@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile, stat } from "@tauri-apps/plugin-fs";
-import type { Library, Settings } from "./types";
+import type { Library, Settings, StoreId } from "./types";
 import type { SteamGame, GogSyncResult, EpicSyncResult, IgnGame } from "./sync";
 
 const JSON_FILTER = [{ name: "Game Library", extensions: ["json"] }];
@@ -94,3 +94,15 @@ export const hltbSearch = (title: string) =>
 
 /** Version of the newest available build (package.json on main). */
 export const latestVersion = () => invoke<string>("latest_version");
+
+/** One hit from a store's title search; `id` is that store's sync id. */
+export interface SearchResult {
+  store: StoreId;
+  id: string;
+  title: string;
+  coverUrl?: string;
+}
+
+/** Title search in one store's catalog (Steam, GOG, IGN). */
+export const storeSearch = (store: StoreId, term: string) =>
+  invoke<SearchResult[]>("store_search", { store, term });
